@@ -159,34 +159,37 @@ def plot_figure1_regions(
 ) -> None:
     plt = _import_matplotlib()
     figure, axis = plt.subplots(figsize=(8.5, 7.0))
+    sorted_levels = sorted(masks)
+    color_map = plt.get_cmap("viridis")
+    color_positions = np.linspace(0.1, 0.95, len(sorted_levels))
     colors = {
-        4: "#7f3c8d",
-        5: "#11a579",
-        6: "#3969ac",
-        7: "#f2b701",
+        level: color_map(position)
+        for level, position in zip(sorted_levels, color_positions, strict=False)
     }
+    fill_regions = len(sorted_levels) <= 8
     u_grid, e_grid = np.meshgrid(u_values, e_values)
-    for level in sorted(masks):
+    for level in sorted_levels:
         mask = masks[level].astype(float)
-        color = colors.get(level, None)
-        axis.contourf(
-            u_grid,
-            e_grid,
-            mask,
-            levels=[0.5, 1.5],
-            colors=[color],
-            alpha=0.16,
-        )
+        color = colors[level]
+        if fill_regions:
+            axis.contourf(
+                u_grid,
+                e_grid,
+                mask,
+                levels=[0.5, 1.5],
+                colors=[color],
+                alpha=0.16,
+            )
         axis.contour(
             u_grid,
             e_grid,
             mask,
             levels=[0.5],
             colors=[color],
-            linewidths=1.3,
+            linewidths=1.6 if not fill_regions else 1.3,
         )
-    for level in sorted(masks):
-        color = colors.get(level, None)
+    for level in sorted_levels:
+        color = colors[level]
         axis.plot([], [], color=color, linewidth=2.0, label=f"K={level}")
     axis.set_xlim(u_values[0], u_values[-1])
     axis.set_ylim(e_values[0], e_values[-1])
@@ -194,7 +197,13 @@ def plot_figure1_regions(
     axis.set_ylabel(r"$E$")
     axis.set_title("Figure 1 quadratic toy-model bootstrap")
     axis.grid(True, alpha=0.25)
-    axis.legend()
+    if len(sorted_levels) > 12:
+        legend_columns = 3
+    elif len(sorted_levels) > 8:
+        legend_columns = 2
+    else:
+        legend_columns = 1
+    axis.legend(ncol=legend_columns, fontsize=9)
     figure.tight_layout()
     output_path = Path(out_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,4 +265,3 @@ def run_figure1_scan(
         "masks": masks,
         "rows": rows,
     }
-

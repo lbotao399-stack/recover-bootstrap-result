@@ -1,0 +1,9 @@
+{
+  "min_level": 4,
+  "max_level": 120,
+  "e_min": -1.0,
+  "e_max": 10.0,
+  "num_e": 12001,
+  "tolerance": 1e-09,
+  "u_shift": 0.5
+}

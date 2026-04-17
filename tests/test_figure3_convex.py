@@ -66,4 +66,4 @@ def test_scan_figure3_returns_finite_k2_values() -> None:
     config = Figure3Config(levels=(2,), g_min=0.5, g_max=1.5, num_g=3, solver_eps=1e-7, solver_max_iters=50000)
     _, bounds, statuses = scan_figure3(config)
     assert np.all(np.isfinite(bounds[2]))
-    assert all(status in {"optimal", "optimal_inaccurate"} for status in statuses[2])
+    assert all(":cert" in status for status in statuses[2])

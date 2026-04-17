@@ -1,0 +1,21 @@
+{
+  "levels": [
+    2,
+    3,
+    4,
+    5,
+    6
+  ],
+  "g_min": 0.05,
+  "g_max": 5.0,
+  "num_g": 61,
+  "epsilon": -1,
+  "pure_constraint_order_extra": 2,
+  "solver": "AUTO",
+  "solver_eps": 1e-07,
+  "solver_max_iters": 50000,
+  "eq_tolerance": 1e-06,
+  "psd_tolerance": 1e-06,
+  "nesting_tolerance": 1e-07,
+  "formulation": "reduced shifted-scaled basis"
+}

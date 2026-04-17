@@ -1,0 +1,23 @@
+{
+  "model": "sho",
+  "omega": 1.0,
+  "epsilon": -1,
+  "matrix_size": 3,
+  "moment_cutoff": 6,
+  "t_values": [
+    1,
+    3,
+    5
+  ],
+  "energies": [
+    0.0,
+    0.5,
+    1.0,
+    2.0
+  ],
+  "solver": "SCS",
+  "solver_kwargs": {
+    "eps": 1e-08,
+    "max_iters": 100000
+  }
+}

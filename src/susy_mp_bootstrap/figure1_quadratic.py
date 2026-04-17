@@ -1,0 +1,259 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+import csv
+import json
+
+import numpy as np
+
+
+@dataclass(frozen=True)
+class Figure1Config:
+    levels: tuple[int, ...] = (4, 5, 6, 7)
+    u_min: float = 0.0
+    u_max: float = 10.0
+    e_min: float = -1.0
+    e_max: float = 10.0
+    num_u: int = 501
+    num_e: int = 551
+    tolerance: float = 1e-9
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "levels": list(self.levels),
+            "u_min": self.u_min,
+            "u_max": self.u_max,
+            "e_min": self.e_min,
+            "e_max": self.e_max,
+            "num_u": self.num_u,
+            "num_e": self.num_e,
+            "tolerance": self.tolerance,
+        }
+
+
+def quadratic_sho_even_moments(level: int, *, energy: float, u: float) -> dict[int, float]:
+    if level < 2:
+        raise ValueError("level must be at least 2")
+    moments: dict[int, float] = {
+        0: 1.0,
+        1: 0.0,
+        2: float(u),
+        3: 0.0,
+    }
+    a = 2.0 * float(energy) + 1.0
+    max_order = 2 * (level - 1)
+    for t in range(4, max_order + 1):
+        if t % 2 == 1:
+            moments[t] = 0.0
+            continue
+        moments[t] = (
+            ((t - 1) / t) * a * moments[t - 2]
+            + ((t - 1) * (t - 2) * (t - 3) / (4.0 * t)) * moments[t - 4]
+        )
+    return moments
+
+
+def quadratic_hankel_matrix(level: int, *, energy: float, u: float) -> np.ndarray:
+    moments = quadratic_sho_even_moments(level, energy=energy, u=u)
+    return np.array(
+        [[moments[i + j] for j in range(level)] for i in range(level)],
+        dtype=float,
+    )
+
+
+def _parity_block(matrix: np.ndarray, parity: int) -> np.ndarray:
+    indices = [index for index in range(matrix.shape[0]) if index % 2 == parity]
+    return matrix[np.ix_(indices, indices)]
+
+
+def quadratic_feasible(level: int, *, energy: float, u: float, tolerance: float = 1e-9) -> bool:
+    if u < 0:
+        return False
+    matrix = quadratic_hankel_matrix(level, energy=energy, u=u)
+    for parity in (0, 1):
+        block = _parity_block(matrix, parity)
+        if block.size == 0:
+            continue
+        min_eigenvalue = float(np.min(np.linalg.eigvalsh(block)))
+        if min_eigenvalue < -tolerance:
+            return False
+    return True
+
+
+def scan_figure1_region(config: Figure1Config) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray]]:
+    u_values = np.linspace(config.u_min, config.u_max, config.num_u)
+    e_values = np.linspace(config.e_min, config.e_max, config.num_e)
+    masks: dict[int, np.ndarray] = {}
+    for level in config.levels:
+        mask = np.zeros((config.num_e, config.num_u), dtype=bool)
+        for e_index, energy in enumerate(e_values):
+            for u_index, u in enumerate(u_values):
+                mask[e_index, u_index] = quadratic_feasible(
+                    level,
+                    energy=float(energy),
+                    u=float(u),
+                    tolerance=config.tolerance,
+                )
+        masks[level] = mask
+    return u_values, e_values, masks
+
+
+def summarise_masks(
+    u_values: np.ndarray,
+    e_values: np.ndarray,
+    masks: dict[int, np.ndarray],
+) -> list[dict[str, float | int]]:
+    rows: list[dict[str, float | int]] = []
+    for level, mask in masks.items():
+        for e_index, energy in enumerate(e_values):
+            feasible_indices = np.flatnonzero(mask[e_index])
+            if feasible_indices.size == 0:
+                rows.append(
+                    {
+                        "level": level,
+                        "energy": float(energy),
+                        "u_min": np.nan,
+                        "u_max": np.nan,
+                        "n_feasible": 0,
+                    }
+                )
+                continue
+            rows.append(
+                {
+                    "level": level,
+                    "energy": float(energy),
+                    "u_min": float(u_values[feasible_indices[0]]),
+                    "u_max": float(u_values[feasible_indices[-1]]),
+                    "n_feasible": int(feasible_indices.size),
+                }
+            )
+    return rows
+
+
+def write_bounds_csv(path: str | Path, rows: list[dict[str, float | int]]) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["level", "energy", "u_min", "u_max", "n_feasible"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _import_matplotlib():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    return plt
+
+
+def plot_figure1_regions(
+    u_values: np.ndarray,
+    e_values: np.ndarray,
+    masks: dict[int, np.ndarray],
+    *,
+    out_path: str | Path,
+) -> None:
+    plt = _import_matplotlib()
+    figure, axis = plt.subplots(figsize=(8.5, 7.0))
+    colors = {
+        4: "#7f3c8d",
+        5: "#11a579",
+        6: "#3969ac",
+        7: "#f2b701",
+    }
+    u_grid, e_grid = np.meshgrid(u_values, e_values)
+    for level in sorted(masks):
+        mask = masks[level].astype(float)
+        color = colors.get(level, None)
+        axis.contourf(
+            u_grid,
+            e_grid,
+            mask,
+            levels=[0.5, 1.5],
+            colors=[color],
+            alpha=0.16,
+        )
+        axis.contour(
+            u_grid,
+            e_grid,
+            mask,
+            levels=[0.5],
+            colors=[color],
+            linewidths=1.3,
+        )
+    for level in sorted(masks):
+        color = colors.get(level, None)
+        axis.plot([], [], color=color, linewidth=2.0, label=f"K={level}")
+    axis.set_xlim(u_values[0], u_values[-1])
+    axis.set_ylim(e_values[0], e_values[-1])
+    axis.set_xlabel(r"$\langle x^2 \rangle$")
+    axis.set_ylabel(r"$E$")
+    axis.set_title("Figure 1 quadratic toy-model bootstrap")
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
+def run_figure1_scan(
+    *,
+    out_dir: str | Path,
+    config: Figure1Config | None = None,
+) -> dict[str, Any]:
+    resolved_config = Figure1Config() if config is None else config
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "config.json").write_text(
+        json.dumps(resolved_config.to_json(), indent=2),
+        encoding="utf-8",
+    )
+    u_values, e_values, masks = scan_figure1_region(resolved_config)
+    rows = summarise_masks(u_values, e_values, masks)
+    write_bounds_csv(output_dir / "bounds.csv", rows)
+    plot_figure1_regions(
+        u_values,
+        e_values,
+        masks,
+        out_path=output_dir / "figure1_levels_4_5_6_7.png",
+    )
+
+    counts = {level: int(np.count_nonzero(mask)) for level, mask in masks.items()}
+    summary_lines = [
+        "# Figure 1 quadratic bootstrap",
+        "",
+        "Model: `W(x) = x^2 / 2`, `epsilon = -1`, parity-even projection.",
+        "",
+        "Scan setup:",
+        f"- levels: {', '.join(str(level) for level in resolved_config.levels)}",
+        f"- x^2 range: [{resolved_config.u_min}, {resolved_config.u_max}]",
+        f"- E range: [{resolved_config.e_min}, {resolved_config.e_max}]",
+        f"- grid: {resolved_config.num_u} x-points, {resolved_config.num_e} energy points",
+        "",
+        "Feasible grid counts:",
+    ]
+    for level in sorted(counts):
+        summary_lines.append(f"- K={level}: {counts[level]} feasible points")
+    summary_lines.extend(
+        [
+            "",
+            "Construction:",
+            "- moments are seeded by `m0 = 1`, `m1 = 0`, `m2 = u`, `m3 = 0`",
+            "- all higher moments are generated by the quadratic recursion",
+            "- the `K x K` Hankel matrix is required to be positive semidefinite",
+        ]
+    )
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return {
+        "u_values": u_values,
+        "e_values": e_values,
+        "masks": masks,
+        "rows": rows,
+    }
+

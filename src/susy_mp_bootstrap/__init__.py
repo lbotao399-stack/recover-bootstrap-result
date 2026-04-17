@@ -6,6 +6,16 @@ from .matrix_bootstrap import (
     quadratic_x2_lower_bound,
 )
 from .matrix_words import PSI, PSIDAG, P, X, TracedWord
+from .figure1_quadratic import (
+    Figure1Config,
+    plot_figure1_regions,
+    quadratic_feasible,
+    quadratic_hankel_matrix,
+    quadratic_sho_even_moments,
+    run_figure1_scan,
+    scan_figure1_region,
+    summarise_masks,
+)
 from .models_1d import (
     PolynomialSuperpotential,
     cubic_mp_superpotential,
@@ -33,6 +43,7 @@ __all__ = [
     "X",
     "FixedEnergySDP",
     "FixedEnergySDPResult",
+    "Figure1Config",
     "PolynomialSuperpotential",
     "TracedWord",
     "build_fixed_energy_problem",
@@ -45,10 +56,16 @@ __all__ = [
     "harmonic_oscillator_recursion_coefficients",
     "harmonic_oscillator_superpotential",
     "large_n_harmonic_oscillator_benchmarks",
+    "plot_figure1_regions",
+    "quadratic_feasible",
+    "quadratic_hankel_matrix",
     "quadratic_operator_basis",
+    "quadratic_sho_even_moments",
     "quadratic_x2_lower_bound",
     "quartic_correction_superpotential",
     "recursion_coefficients",
+    "run_figure1_scan",
+    "scan_figure1_region",
     "solve_fixed_energy_sdp",
+    "summarise_masks",
 ]
-

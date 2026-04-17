@@ -16,6 +16,9 @@ dependencies = [
 sdp = [
   "cvxpy",
 ]
+plot = [
+  "matplotlib",
+]
 test = [
   "pytest",
 ]
@@ -25,4 +28,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

@@ -52,6 +52,7 @@ from .figure3_convex import (
     solve_figure3_point,
 )
 from .figure4_cubic import (
+    FIGURE4_WKB_COEFFICIENT,
     Figure4Config,
     Figure4FeasibilityResult,
     Figure4Reducer,
@@ -60,6 +61,7 @@ from .figure4_cubic import (
     figure4_operator_basis,
     figure4_string_ground_basis,
     figure4_string_operator_basis,
+    figure4_wkb_curve,
     plot_figure4,
     plot_figure4_gap,
     plot_figure4_zoom,
@@ -104,6 +106,7 @@ __all__ = [
     "Figure4Config",
     "Figure4FeasibilityResult",
     "Figure4Reducer",
+    "FIGURE4_WKB_COEFFICIENT",
     "PolynomialSuperpotential",
     "TracedWord",
     "build_fixed_energy_problem",
@@ -124,6 +127,7 @@ __all__ = [
     "figure4_operator_basis",
     "figure4_string_ground_basis",
     "figure4_string_operator_basis",
+    "figure4_wkb_curve",
     "plot_figure1_line_scan",
     "plot_figure1_regions",
     "plot_figure2_eu_regions",

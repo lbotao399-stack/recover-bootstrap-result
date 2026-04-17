@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import pytest
+import numpy as np
 
 from susy_mp_bootstrap.figure4_cubic import (
     BASIS_B5,
     BASIS_C4,
+    FIGURE4_WKB_COEFFICIENT,
     Figure4Reducer,
     figure4_ground_basis,
     figure4_operator_basis,
+    figure4_wkb_curve,
 )
 
 
@@ -63,3 +66,11 @@ def test_operator_basis_levels_do_not_exceed_five() -> None:
 
     assert max(level(word) for word in figure4_operator_basis()) == 5
     assert max(level(word) for word in figure4_ground_basis()) == 4
+
+
+def test_wkb_curve_matches_large_g_formula() -> None:
+    g_values = np.array([0.0, 1.0, 8.0], dtype=float)
+    energies = figure4_wkb_curve(g_values)
+    assert energies == pytest.approx(
+        np.array([0.0, FIGURE4_WKB_COEFFICIENT, 4.0 * FIGURE4_WKB_COEFFICIENT], dtype=float)
+    )

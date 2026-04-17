@@ -9,6 +9,8 @@
 - Thresholds:
   - `psd_tolerance = 3e-06`
   - `margin_tolerance = 0.001`
+- full-frame plot now includes the WKB line
+  - `E_WKB(g) = 0.2610377147951411327 g^{2/3}`
 
 Status rows:
 - g=20.0 pred=2.052655 win=0.003000 low=2.052655 up=2.052655 ls=CLARABEL:optimal us=CLARABEL:optimal_inaccurate

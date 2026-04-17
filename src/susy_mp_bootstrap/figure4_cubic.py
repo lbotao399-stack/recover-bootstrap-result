@@ -870,6 +870,12 @@ def plot_figure4(
 ) -> None:
     plt = _import_matplotlib()
     figure, axis = plt.subplots(figsize=(9.4, 7.0))
+    lower_mask = np.isfinite(lower)
+    upper_mask = np.isfinite(upper)
+    if np.any(upper_mask):
+        axis.plot(g_values[upper_mask], upper[upper_mask], color="#2ca25f", linewidth=1.2, alpha=0.9, zorder=2)
+    if np.any(lower_mask):
+        axis.plot(g_values[lower_mask], lower[lower_mask], color="#6a3d9a", linewidth=1.2, alpha=0.9, zorder=1)
     axis.scatter(
         g_values,
         upper,

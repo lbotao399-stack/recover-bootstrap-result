@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -392,6 +392,15 @@ class Figure4GuideResult:
     m2: float
 
 
+@dataclass(frozen=True)
+class Figure4BranchAnchor:
+    g: float
+    energy: float
+    energy_hat: float
+    m1: float
+    m2: float
+
+
 def _build_real_psd_constraints(cp, matrix_exprs, variables) -> tuple[Any, Any]:
     size = len(matrix_exprs)
     re_matrix = [[0 for _ in range(size)] for _ in range(size)]
@@ -559,6 +568,10 @@ def _energy_hat_from_physical(g: float, energy: float) -> float:
     return (energy - 1.0 / (32.0 * g * g)) / (g ** (2.0 / 3.0))
 
 
+def _energy_physical_from_hat(g: float, energy_hat: float) -> float:
+    return (1.0 / (32.0 * g * g)) + (g ** (2.0 / 3.0)) * energy_hat
+
+
 def _status_tag(result: Figure4FeasibilityResult) -> str:
     if result.solver_name is None:
         return result.status
@@ -590,6 +603,32 @@ def _scaled_fd_guide(
         m1=float(np.sum(density * z) * dz),
         m2=float(np.sum(density * z * z) * dz),
     )
+
+
+def _predict_branch_center(
+    *,
+    g: float,
+    anchors: list[Figure4BranchAnchor],
+    guide: Figure4GuideResult,
+    e_min: float,
+    e_max: float,
+) -> tuple[float, float]:
+    if len(anchors) < 3:
+        return guide.energy, 0.01
+
+    target_lambda = g ** (-4.0 / 3.0)
+    nearest = sorted(anchors, key=lambda anchor: abs(anchor.g ** (-4.0 / 3.0) - target_lambda))[: min(5, len(anchors))]
+    xs = np.array([anchor.g ** (-4.0 / 3.0) for anchor in nearest], dtype=float)
+    ys = np.array([anchor.energy_hat for anchor in nearest], dtype=float)
+    degree = min(2, len(nearest) - 1)
+    coefficients = np.polyfit(xs, ys, degree)
+    predicted_hat = float(np.polyval(coefficients, target_lambda))
+    predicted_energy = _energy_physical_from_hat(g, predicted_hat)
+    fit_residual = float(np.max(np.abs(np.polyval(coefficients, xs) - ys))) if xs.size > degree + 1 else 0.0
+    window = max(0.003, 4.0 * (g ** (2.0 / 3.0)) * fit_residual)
+    if abs(predicted_energy - guide.energy) > max(0.05, 6.0 * window):
+        predicted_energy = 0.5 * (predicted_energy + guide.energy)
+    return min(e_max, max(e_min, predicted_energy)), window
 
 
 def _locate_seed(
@@ -627,6 +666,44 @@ def _locate_seed(
         if result.feasible:
             return energy, result
     return None
+
+
+def _locate_seed_fit_guided(
+    *,
+    g: float,
+    include_ground: bool,
+    config: Figure4Config,
+    guide: Figure4GuideResult,
+    anchors: list[Figure4BranchAnchor],
+    initial_guess: tuple[float, float] | None,
+) -> tuple[float, Figure4FeasibilityResult] | None:
+    center_energy, window = _predict_branch_center(
+        g=g,
+        anchors=anchors,
+        guide=guide,
+        e_min=config.e_min,
+        e_max=config.e_max,
+    )
+    fit_config = replace(
+        config,
+        seed_step=max(0.001, window / max(1, config.max_seed_tries - 1)),
+    )
+    located = _locate_seed(
+        g=g,
+        center_energy=center_energy,
+        include_ground=include_ground,
+        config=fit_config,
+        initial_guess=initial_guess,
+    )
+    if located is not None:
+        return located
+    return _locate_seed(
+        g=g,
+        center_energy=guide.energy,
+        include_ground=include_ground,
+        config=config,
+        initial_guess=initial_guess,
+    )
 
 
 def _step_to_bracket(
@@ -758,6 +835,8 @@ def scan_figure4(config: Figure4Config) -> tuple[np.ndarray, np.ndarray, np.ndar
     upper = np.full(g_values.size, np.nan, dtype=float)
     lower_statuses: list[str] = []
     upper_statuses: list[str] = []
+    lower_anchors: list[Figure4BranchAnchor] = []
+    upper_anchors: list[Figure4BranchAnchor] = []
 
     for index, g in enumerate(g_values):
         if g == 0.0:
@@ -786,6 +865,15 @@ def scan_figure4(config: Figure4Config) -> tuple[np.ndarray, np.ndarray, np.ndar
             lower_statuses.append("ordinary:not_found")
         else:
             seed_energy, seed_result = ordinary_seed
+            lower_anchors.append(
+                Figure4BranchAnchor(
+                    g=float(g),
+                    energy=seed_energy,
+                    energy_hat=_energy_hat_from_physical(float(g), seed_energy),
+                    m1=float(seed_result.m1),
+                    m2=float(seed_result.m2),
+                )
+            )
             left, right, seed_for_refine = _step_to_bracket(
                 g=float(g),
                 seed_energy=seed_energy,
@@ -823,6 +911,15 @@ def scan_figure4(config: Figure4Config) -> tuple[np.ndarray, np.ndarray, np.ndar
             upper_statuses.append("ground:not_found")
         else:
             seed_energy, seed_result = ground_seed
+            upper_anchors.append(
+                Figure4BranchAnchor(
+                    g=float(g),
+                    energy=seed_energy,
+                    energy_hat=_energy_hat_from_physical(float(g), seed_energy),
+                    m1=float(seed_result.m1),
+                    m2=float(seed_result.m2),
+                )
+            )
             left, right, seed_for_refine = _step_to_bracket(
                 g=float(g),
                 seed_energy=seed_energy,
@@ -850,6 +947,212 @@ def scan_figure4(config: Figure4Config) -> tuple[np.ndarray, np.ndarray, np.ndar
             upper_statuses.append(_status_tag(refined))
 
     return g_values, lower, upper, lower_statuses, upper_statuses
+
+
+def run_figure4_fit_guided_seed_scan(
+    *,
+    out_dir: str | Path,
+    g_values: np.ndarray | None = None,
+    config: Figure4Config | None = None,
+) -> dict[str, Any]:
+    resolved_config = Figure4Config(psd_tolerance=3e-6, margin_tolerance=1e-3) if config is None else config
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_g = (
+        np.array(
+            [
+                0.0,
+                0.2,
+                0.25,
+                0.3,
+                0.35,
+                0.4,
+                0.45,
+                0.5,
+                0.55,
+                0.6,
+                0.7,
+                0.8,
+                0.9,
+                1.0,
+                1.1,
+                1.2,
+                1.35,
+                1.5,
+                1.7,
+                2.0,
+                2.3,
+                2.6,
+                3.0,
+                3.5,
+                4.0,
+                4.5,
+                5.0,
+                6.0,
+                7.0,
+                8.0,
+                10.0,
+                12.0,
+                15.0,
+                18.0,
+                22.0,
+                28.0,
+                35.0,
+                45.0,
+                60.0,
+                80.0,
+                100.0,
+            ],
+            dtype=float,
+        )
+        if g_values is None
+        else np.asarray(g_values, dtype=float)
+    )
+
+    lower = np.full(resolved_g.size, np.nan, dtype=float)
+    upper = np.full(resolved_g.size, np.nan, dtype=float)
+    lower_statuses: list[str] = []
+    upper_statuses: list[str] = []
+    rows: list[dict[str, Any]] = []
+    lower_anchors: list[Figure4BranchAnchor] = []
+    upper_anchors: list[Figure4BranchAnchor] = []
+
+    (output_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "mode": "fit-guided seed branch",
+                "g_values": resolved_g.tolist(),
+                "figure4_config": resolved_config.to_json(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    fieldnames = ["g", "guide_energy", "lower_energy", "upper_energy", "lower_status", "upper_status"]
+    progress_path = output_dir / "progress.log"
+    progress_path.write_text("", encoding="utf-8")
+    with progress_path.open("a", encoding="utf-8") as log:
+        for index, g in enumerate(resolved_g):
+            if g == 0.0:
+                lower[index] = 0.0
+                upper[index] = 0.0
+                lower_statuses.append("exact:g0")
+                upper_statuses.append("exact:g0")
+                rows.append(
+                    {
+                        "g": 0.0,
+                        "guide_energy": 0.0,
+                        "lower_energy": 0.0,
+                        "upper_energy": 0.0,
+                        "lower_status": "exact:g0",
+                        "upper_status": "exact:g0",
+                    }
+                )
+                continue
+
+            guide = _scaled_fd_guide(
+                g=float(g),
+                epsilon=resolved_config.epsilon,
+                grid_size=resolved_config.guide_grid_size,
+                extent=resolved_config.guide_extent,
+            )
+            guide_guess = (guide.m1, guide.m2)
+            ordinary_seed = _locate_seed_fit_guided(
+                g=float(g),
+                include_ground=False,
+                config=resolved_config,
+                guide=guide,
+                anchors=lower_anchors,
+                initial_guess=guide_guess,
+            )
+            ground_seed = _locate_seed_fit_guided(
+                g=float(g),
+                include_ground=True,
+                config=resolved_config,
+                guide=guide,
+                anchors=upper_anchors,
+                initial_guess=guide_guess,
+            )
+
+            if ordinary_seed is not None:
+                energy, result = ordinary_seed
+                lower[index] = energy
+                lower_statuses.append(f"{result.solver_name}:{result.status}")
+                lower_anchors.append(
+                    Figure4BranchAnchor(
+                        g=float(g),
+                        energy=float(energy),
+                        energy_hat=_energy_hat_from_physical(float(g), float(energy)),
+                        m1=float(result.m1),
+                        m2=float(result.m2),
+                    )
+                )
+            else:
+                lower_statuses.append("ordinary:not_found")
+
+            if ground_seed is not None:
+                energy, result = ground_seed
+                upper[index] = energy
+                upper_statuses.append(f"{result.solver_name}:{result.status}")
+                upper_anchors.append(
+                    Figure4BranchAnchor(
+                        g=float(g),
+                        energy=float(energy),
+                        energy_hat=_energy_hat_from_physical(float(g), float(energy)),
+                        m1=float(result.m1),
+                        m2=float(result.m2),
+                    )
+                )
+            else:
+                upper_statuses.append("ground:not_found")
+
+            rows.append(
+                {
+                    "g": float(g),
+                    "guide_energy": guide.energy,
+                    "lower_energy": float(lower[index]) if np.isfinite(lower[index]) else np.nan,
+                    "upper_energy": float(upper[index]) if np.isfinite(upper[index]) else np.nan,
+                    "lower_status": lower_statuses[-1],
+                    "upper_status": upper_statuses[-1],
+                }
+            )
+            with (output_dir / "bounds.csv").open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+            log.write(
+                f"g={g:.2f} lower={lower_statuses[-1]} upper={upper_statuses[-1]} "
+                f"lowE={rows[-1]['lower_energy']} upE={rows[-1]['upper_energy']}\n"
+            )
+            log.flush()
+
+    plot_figure4(resolved_g, lower, upper, out_path=output_dir / "figure4_bounds.png")
+    summary_lines = [
+        "# Figure 4 fit-guided seed curve",
+        "",
+        "- Model: `W(x) = x^2/2 + g x^3/3`",
+        "- Sector: `epsilon = -1`",
+        "- Method: local polynomial fit in `Ehat(lambda)` from previously found branch points, then narrow-range seed search around the predicted energy",
+        "- Basis: exact canonical compression, ordinary `12x12`, ground-state `8x8`",
+        "- Seed certificate thresholds:",
+        f"  - `psd_tolerance = {resolved_config.psd_tolerance}`",
+        f"  - `margin_tolerance = {resolved_config.margin_tolerance}`",
+        "- This run is for denser branch tracking; it still does not refine the left/right feasible edges.",
+        "",
+        "Status rows:",
+    ]
+    summary_lines.extend(
+        [f"- g={row['g']}: lower={row['lower_status']}, upper={row['upper_status']}" for row in rows]
+    )
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return {
+        "g_values": resolved_g,
+        "lower": lower,
+        "upper": upper,
+        "lower_statuses": lower_statuses,
+        "upper_statuses": upper_statuses,
+    }
 
 
 def _import_matplotlib():
@@ -899,6 +1202,330 @@ def plot_figure4(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
+
+
+def plot_figure4_zoom(
+    g_values: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    *,
+    out_path: str | Path,
+    x_min: float,
+    x_max: float,
+) -> None:
+    plt = _import_matplotlib()
+    figure, axis = plt.subplots(figsize=(8.4, 6.2))
+    lower_mask = np.isfinite(lower)
+    upper_mask = np.isfinite(upper)
+    if np.any(upper_mask):
+        axis.plot(g_values[upper_mask], upper[upper_mask], color="#2ca25f", linewidth=1.4, zorder=2)
+    if np.any(lower_mask):
+        axis.plot(g_values[lower_mask], lower[lower_mask], color="#6a3d9a", linewidth=1.4, zorder=1)
+    axis.scatter(g_values[upper_mask], upper[upper_mask], facecolors="none", edgecolors="#2ca25f", linewidths=1.4, s=46, zorder=3)
+    axis.scatter(g_values[lower_mask], lower[lower_mask], color="#6a3d9a", s=18, zorder=4)
+    finite = np.concatenate([lower[np.isfinite(lower)], upper[np.isfinite(upper)]])
+    if finite.size > 0:
+        y_min = float(np.min(finite))
+        y_max = float(np.max(finite))
+        pad = max(5e-4, 0.12 * (y_max - y_min + 1e-6))
+        axis.set_ylim(y_min - pad, y_max + pad)
+    axis.set_xlim(x_min, x_max)
+    axis.set_xlabel(r"$g$")
+    axis.set_ylabel(r"$E$")
+    axis.set_title("Figure 4 high-g zoom")
+    axis.grid(True, alpha=0.25)
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=200)
+    plt.close(figure)
+
+
+def plot_figure4_gap(
+    g_values: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    *,
+    out_path: str | Path,
+) -> None:
+    plt = _import_matplotlib()
+    figure, axis = plt.subplots(figsize=(8.4, 4.8))
+    gap = upper - lower
+    mask = np.isfinite(gap)
+    axis.plot(g_values[mask], gap[mask], color="#1f78b4", linewidth=1.3)
+    axis.scatter(g_values[mask], gap[mask], color="#1f78b4", s=20)
+    axis.set_xlabel(r"$g$")
+    axis.set_ylabel(r"$E_{\rm upper} - E_{\rm lower}$")
+    axis.set_title("Figure 4 high-g gap")
+    axis.grid(True, alpha=0.25)
+    axis.ticklabel_format(axis="y", style="sci", scilimits=(-3, 3))
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=200)
+    plt.close(figure)
+
+
+def _load_branch_anchors(csv_path: str | Path, *, energy_column: str = "lower_energy") -> list[Figure4BranchAnchor]:
+    anchors: list[Figure4BranchAnchor] = []
+    with Path(csv_path).open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            g = float(row["g"])
+            if g <= 0.0:
+                continue
+            energy_text = row.get(energy_column, "")
+            if energy_text in {"", "nan", "NaN"}:
+                continue
+            energy = float(energy_text)
+            anchors.append(
+                Figure4BranchAnchor(
+                    g=g,
+                    energy=energy,
+                    energy_hat=_energy_hat_from_physical(g, energy),
+                    m1=0.0,
+                    m2=0.0,
+                )
+            )
+    return anchors
+
+
+def run_figure4_refined_window_scan(
+    *,
+    out_dir: str | Path,
+    g_values: np.ndarray,
+    anchor_csv: str | Path,
+    config: Figure4Config | None = None,
+) -> dict[str, Any]:
+    resolved_config = (
+        Figure4Config(
+            solver="CLARABEL",
+            psd_tolerance=5e-6,
+            margin_tolerance=5e-5,
+            refine_steps=16,
+            boundary_step_abs=1e-4,
+            boundary_step_rel=1e-4,
+            boundary_growth=1.6,
+            seed_step=5e-4,
+            max_seed_tries=12,
+        )
+        if config is None
+        else config
+    )
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_g = np.asarray(g_values, dtype=float)
+    anchors = _load_branch_anchors(anchor_csv)
+
+    lower = np.full(resolved_g.size, np.nan, dtype=float)
+    upper = np.full(resolved_g.size, np.nan, dtype=float)
+    rows: list[dict[str, Any]] = []
+    fieldnames = [
+        "g",
+        "predicted_center_energy",
+        "search_half_window",
+        "guide_energy",
+        "lower_energy",
+        "upper_energy",
+        "gap",
+        "lower_status",
+        "upper_status",
+        "lower_margin",
+        "upper_margin",
+        "lower_psd_residual",
+        "upper_psd_residual_main",
+        "upper_psd_residual_ground",
+    ]
+
+    for index, g in enumerate(resolved_g):
+        guide = _scaled_fd_guide(
+            g=float(g),
+            epsilon=resolved_config.epsilon,
+            grid_size=resolved_config.guide_grid_size,
+            extent=resolved_config.guide_extent,
+        )
+        predicted_center, window = _predict_branch_center(
+            g=float(g),
+            anchors=anchors,
+            guide=guide,
+            e_min=resolved_config.e_min,
+            e_max=resolved_config.e_max,
+        )
+        ordinary_seed = _locate_seed_fit_guided(
+            g=float(g),
+            include_ground=False,
+            config=resolved_config,
+            guide=guide,
+            anchors=anchors,
+            initial_guess=(guide.m1, guide.m2),
+        )
+        ground_seed = _locate_seed_fit_guided(
+            g=float(g),
+            include_ground=True,
+            config=resolved_config,
+            guide=guide,
+            anchors=anchors,
+            initial_guess=(guide.m1, guide.m2),
+        )
+
+        lower_status = "ordinary:not_found"
+        upper_status = "ground:not_found"
+        lower_margin = np.nan
+        upper_margin = np.nan
+        lower_psd_residual = np.nan
+        upper_psd_residual_main = np.nan
+        upper_psd_residual_ground = np.nan
+
+        if ordinary_seed is not None:
+            seed_energy, seed_result = ordinary_seed
+            left, right, seed_for_refine = _step_to_bracket(
+                g=float(g),
+                seed_energy=seed_energy,
+                seed_result=seed_result,
+                direction=-1.0,
+                include_ground=False,
+                config=resolved_config,
+            )
+            boundary, refined = _refine_boundary(
+                g=float(g),
+                left=float(left),
+                right=float(right),
+                want_leftmost_feasible=True,
+                include_ground=False,
+                epsilon=resolved_config.epsilon,
+                solver=resolved_config.solver,
+                solver_eps=resolved_config.solver_eps,
+                solver_max_iters=resolved_config.solver_max_iters,
+                psd_tolerance=resolved_config.psd_tolerance,
+                margin_tolerance=resolved_config.margin_tolerance,
+                initial_guess=(seed_for_refine.m1, seed_for_refine.m2),
+                refine_steps=resolved_config.refine_steps,
+            )
+            lower[index] = boundary
+            lower_status = f"{refined.solver_name}:{refined.status}"
+            lower_margin = refined.margin if refined.margin is not None else np.nan
+            lower_psd_residual = (
+                refined.psd_residual_main if refined.psd_residual_main is not None else np.nan
+            )
+
+        if ground_seed is not None:
+            seed_energy, seed_result = ground_seed
+            left, right, seed_for_refine = _step_to_bracket(
+                g=float(g),
+                seed_energy=seed_energy,
+                seed_result=seed_result,
+                direction=1.0,
+                include_ground=True,
+                config=resolved_config,
+            )
+            boundary, refined = _refine_boundary(
+                g=float(g),
+                left=float(left),
+                right=float(right),
+                want_leftmost_feasible=False,
+                include_ground=True,
+                epsilon=resolved_config.epsilon,
+                solver=resolved_config.solver,
+                solver_eps=resolved_config.solver_eps,
+                solver_max_iters=resolved_config.solver_max_iters,
+                psd_tolerance=resolved_config.psd_tolerance,
+                margin_tolerance=resolved_config.margin_tolerance,
+                initial_guess=(seed_for_refine.m1, seed_for_refine.m2),
+                refine_steps=resolved_config.refine_steps,
+            )
+            upper[index] = boundary
+            upper_status = f"{refined.solver_name}:{refined.status}"
+            upper_margin = refined.margin if refined.margin is not None else np.nan
+            upper_psd_residual_main = (
+                refined.psd_residual_main if refined.psd_residual_main is not None else np.nan
+            )
+            upper_psd_residual_ground = (
+                refined.psd_residual_ground if refined.psd_residual_ground is not None else np.nan
+            )
+
+        rows.append(
+            {
+                "g": float(g),
+                "predicted_center_energy": predicted_center,
+                "search_half_window": window,
+                "guide_energy": guide.energy,
+                "lower_energy": float(lower[index]) if np.isfinite(lower[index]) else np.nan,
+                "upper_energy": float(upper[index]) if np.isfinite(upper[index]) else np.nan,
+                "gap": float(upper[index] - lower[index]) if np.isfinite(lower[index]) and np.isfinite(upper[index]) else np.nan,
+                "lower_status": lower_status,
+                "upper_status": upper_status,
+                "lower_margin": lower_margin,
+                "upper_margin": upper_margin,
+                "lower_psd_residual": lower_psd_residual,
+                "upper_psd_residual_main": upper_psd_residual_main,
+                "upper_psd_residual_ground": upper_psd_residual_ground,
+            }
+        )
+
+    (output_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "mode": "Figure 4 refined local edge scan",
+                "anchor_csv": str(anchor_csv),
+                "g_values": resolved_g.tolist(),
+                "figure4_config": resolved_config.to_json(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    with (output_dir / "bounds.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    plot_figure4_zoom(
+        resolved_g,
+        lower,
+        upper,
+        out_path=output_dir / "figure4_near100_zoom.png",
+        x_min=float(np.min(resolved_g)),
+        x_max=float(np.max(resolved_g)),
+    )
+    plot_figure4_gap(
+        resolved_g,
+        lower,
+        upper,
+        out_path=output_dir / "figure4_near100_gap.png",
+    )
+    finite_gap = np.asarray([row["gap"] for row in rows if np.isfinite(row["gap"])], dtype=float)
+    summary_lines = [
+        "# Figure 4 refined local edge scan",
+        "",
+        "- Model: `W(x) = x^2/2 + g x^3/3`",
+        "- Sector: `epsilon = -1`",
+        "- Method: fit-guided seed location from previous high-g branch points, then local left/right edge refinement with the canonical compressed SDP",
+        "- Basis: ordinary `12x12`, ground-state `8x8`",
+        "- Solver path: `CLARABEL`",
+        f"- `psd_tolerance = {resolved_config.psd_tolerance}`",
+        f"- `margin_tolerance = {resolved_config.margin_tolerance}`",
+        f"- `refine_steps = {resolved_config.refine_steps}`",
+    ]
+    if finite_gap.size > 0:
+        summary_lines.extend(
+            [
+                f"- gap min: `{float(np.min(finite_gap)):.12g}`",
+                f"- gap max: `{float(np.max(finite_gap)):.12g}`",
+            ]
+        )
+    summary_lines.extend(["", "Rows:"])
+    summary_lines.extend(
+        [
+            f"- g={row['g']}: lower={row['lower_energy']}, upper={row['upper_energy']}, gap={row['gap']}"
+            for row in rows
+        ]
+    )
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return {
+        "g_values": resolved_g,
+        "lower": lower,
+        "upper": upper,
+        "rows": rows,
+    }
 
 
 def run_figure4_scan(

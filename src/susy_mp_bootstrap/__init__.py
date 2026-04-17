@@ -41,11 +41,14 @@ from .figure2_quartic import (
 )
 from .figure3_convex import (
     Figure3Config,
+    Figure3FeasibilityProblem,
     figure3_k2_analytic_bound,
     figure3_perturbation_curve,
     plot_figure3,
+    refine_figure3_levels,
     run_figure3_scan,
     scan_figure3,
+    solve_figure3_point_bisection,
     solve_figure3_point,
 )
 from .models_1d import (
@@ -80,6 +83,7 @@ __all__ = [
     "Figure2ExConfig",
     "Figure2EuConfig",
     "Figure3Config",
+    "Figure3FeasibilityProblem",
     "PolynomialSuperpotential",
     "TracedWord",
     "build_fixed_energy_problem",
@@ -100,6 +104,7 @@ __all__ = [
     "plot_figure2_eu_regions",
     "plot_figure2_ex_regions",
     "plot_figure3",
+    "refine_figure3_levels",
     "quadratic_feasible",
     "quadratic_hankel_matrix",
     "quadratic_line_u",
@@ -123,6 +128,7 @@ __all__ = [
     "scan_figure2_eu",
     "scan_figure2_ex",
     "scan_figure3",
+    "solve_figure3_point_bisection",
     "scan_figure1_line",
     "scan_figure1_region",
     "solve_figure3_point",

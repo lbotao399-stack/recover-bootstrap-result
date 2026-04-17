@@ -14,6 +14,7 @@ from susy_mp_bootstrap.figure3_convex import (
     QuarticConvexReducer,
     figure3_k2_analytic_bound,
     figure3_perturbation_curve,
+    solve_figure3_point_bisection,
     scan_figure3,
     solve_figure3_point,
 )
@@ -32,6 +33,25 @@ def test_k2_bootstrap_matches_analytic_bound() -> None:
         assert value is not None
         expected = float(figure3_k2_analytic_bound(np.array([g]))[0])
         assert value == pytest.approx(expected, abs=5e-5)
+
+
+def test_k2_bisection_matches_analytic_bound() -> None:
+    for g in (0.5, 1.0):
+        expected = float(figure3_k2_analytic_bound(np.array([g]))[0])
+        status, value = solve_figure3_point_bisection(
+            g=g,
+            level=2,
+            epsilon=-1,
+            lower_bound=expected,
+            upper_hint=expected + 0.2,
+            solver_eps=1e-7,
+            solver_max_iters=50000,
+            tolerance=5e-4,
+        )
+        assert status in {"optimal", "optimal_inaccurate"}
+        assert value is not None
+        assert value >= expected - 1e-6
+        assert value <= expected + 0.12
 
 
 def test_quartic_convex_reducer_low_order_relations() -> None:

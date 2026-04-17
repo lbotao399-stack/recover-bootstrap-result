@@ -170,6 +170,19 @@ def _entry_expr_re_im(expr: MomentExpr, moments):
     return _expr_real(expr, moments), _expr_imag(expr, moments)
 
 
+def _default_operator_scales(g: float) -> tuple[float, float]:
+    x_scale = (1.0 + g**2) ** (-1.0 / 6.0)
+    p_scale = 1.0 / x_scale
+    return x_scale, p_scale
+
+
+def _evaluate_expr(expr: MomentExpr, moment_values: np.ndarray) -> complex:
+    total = 0.0 + 0.0j
+    for index, coefficient in expr.items():
+        total += coefficient * moment_values[index]
+    return total
+
+
 def solve_figure3_point(
     *,
     g: float,
@@ -177,12 +190,17 @@ def solve_figure3_point(
     epsilon: int,
     pure_constraint_order_extra: int = 0,
     energy_floor: float | None = None,
+    operator_scaling: bool = False,
     solver: str = "SCS",
     solver_eps: float = 1e-6,
     solver_max_iters: int = 40000,
 ) -> tuple[str, float | None]:
     cp = _import_cvxpy()
     reducer = QuarticConvexReducer(g=g, epsilon=epsilon)
+    if operator_scaling:
+        x_scale, p_scale = _default_operator_scales(g)
+    else:
+        x_scale, p_scale = 1.0, 1.0
     pure_constraint_order = 2 * level + pure_constraint_order_extra
     moment_cutoff = _required_moment_cutoff(level, reducer, pure_constraint_order)
     moments = cp.Variable(moment_cutoff + 1)
@@ -201,12 +219,13 @@ def solve_figure3_point(
     for i in range(level):
         for j in range(level):
             block_entries = (
-                ((i, j), dict(reducer.p_expr(i + j, 0))),
-                ((i, level + j), dict(reducer.p_expr(i, j))),
-                ((level + i, j), _expr_conjugate(dict(reducer.p_expr(j, i)))),
-                ((level + i, level + j), {i + j: 1.0 + 0.0j}),
+                ((i, j), dict(reducer.p_expr(i + j, 0)), (p_scale**i) * (p_scale**j)),
+                ((i, level + j), dict(reducer.p_expr(i, j)), (p_scale**i) * (x_scale**j)),
+                ((level + i, j), _expr_conjugate(dict(reducer.p_expr(j, i))), (x_scale**i) * (p_scale**j)),
+                ((level + i, level + j), {i + j: 1.0 + 0.0j}, (x_scale**i) * (x_scale**j)),
             )
-            for (row, column), expr in block_entries:
+            for (row, column), expr, scale in block_entries:
+                expr = {index: coefficient * scale for index, coefficient in expr.items()}
                 re_matrix[row][column], im_matrix[row][column] = _entry_expr_re_im(expr, moments)
 
     big_psd_rows = []
@@ -258,6 +277,230 @@ def solve_figure3_point(
     return last_status, None
 
 
+class Figure3FeasibilityProblem:
+    def __init__(
+        self,
+        *,
+        g: float,
+        level: int,
+        epsilon: int,
+        pure_constraint_order_extra: int = 0,
+        operator_scaling: bool = True,
+    ) -> None:
+        cp = _import_cvxpy()
+        self.cp = cp
+        self.g = float(g)
+        self.level = int(level)
+        self.epsilon = int(epsilon)
+        reducer = QuarticConvexReducer(g=g, epsilon=epsilon)
+        self._pure_exprs: list[MomentExpr] = []
+        if operator_scaling:
+            x_scale, p_scale = _default_operator_scales(g)
+        else:
+            x_scale, p_scale = 1.0, 1.0
+
+        pure_constraint_order = 2 * level + pure_constraint_order_extra
+        moment_cutoff = _required_moment_cutoff(level, reducer, pure_constraint_order)
+        moments = cp.Variable(moment_cutoff + 1)
+        self.moments = moments
+        constraints = [moments[0] == 1.0]
+
+        for order in range(1, pure_constraint_order + 1):
+            expr = dict(reducer.pure_p_constraint(order))
+            self._pure_exprs.append(expr)
+            constraints.append(_expr_real(expr, moments) == 0.0)
+            constraints.append(_expr_imag(expr, moments) == 0.0)
+
+        size = 2 * level
+        re_matrix = [[0 for _ in range(size)] for _ in range(size)]
+        im_matrix = [[0 for _ in range(size)] for _ in range(size)]
+        for i in range(level):
+            for j in range(level):
+                block_entries = (
+                    ((i, j), dict(reducer.p_expr(i + j, 0)), (p_scale**i) * (p_scale**j)),
+                    ((i, level + j), dict(reducer.p_expr(i, j)), (p_scale**i) * (x_scale**j)),
+                    ((level + i, j), _expr_conjugate(dict(reducer.p_expr(j, i))), (x_scale**i) * (p_scale**j)),
+                    ((level + i, level + j), {i + j: 1.0 + 0.0j}, (x_scale**i) * (x_scale**j)),
+                )
+                for (row, column), expr, scale in block_entries:
+                    expr = {index: coefficient * scale for index, coefficient in expr.items()}
+                    re_matrix[row][column], im_matrix[row][column] = _entry_expr_re_im(expr, moments)
+
+        big_psd_rows = []
+        for row in range(size):
+            big_psd_rows.append(re_matrix[row] + [-entry for entry in im_matrix[row]])
+        for row in range(size):
+            big_psd_rows.append(im_matrix[row] + re_matrix[row])
+        self.big_psd_expr = cp.bmat(big_psd_rows)
+        self.psd_margin = cp.Variable()
+        constraints.append(self.big_psd_expr - self.psd_margin * np.eye(2 * size) >> 0)
+        constraints.append(self.psd_margin <= 1.0)
+
+        self.energy_expr = _expr_real(reducer.energy_expr(), moments)
+        self.energy_cap = cp.Parameter()
+        beta = 1.5 * reducer.alpha
+        self._energy_constant = 1.0 / (4.0 * self.g**2)
+        self._beta_squared_over_four = 0.25 * (beta**2)
+        self.m2_cap = cp.Parameter(nonneg=True)
+        self.m4_cap = cp.Parameter(nonneg=True)
+        constraints.append(self.energy_expr <= self.energy_cap)
+        if moment_cutoff >= 2:
+            constraints.append(moments[2] >= 0.0)
+            constraints.append(moments[2] <= self.m2_cap)
+        if moment_cutoff >= 4:
+            constraints.append(moments[4] >= 0.0)
+            constraints.append(moments[4] <= self.m4_cap)
+        self.problem = cp.Problem(cp.Maximize(self.psd_margin), constraints)
+        self.installed_solvers = set(cp.installed_solvers())
+
+    def _validate_current_solution(self) -> bool:
+        if self.moments.value is None or self.big_psd_expr.value is None or self.energy_expr.value is None or self.psd_margin.value is None:
+            return False
+        moment_values = np.asarray(self.moments.value, dtype=float).reshape(-1)
+        if not np.all(np.isfinite(moment_values)):
+            return False
+        if abs(moment_values[0] - 1.0) > 5e-6:
+            return False
+
+        max_residual = 0.0
+        for expr in self._pure_exprs:
+            max_residual = max(max_residual, abs(_evaluate_expr(expr, moment_values)))
+        if max_residual > 5e-5:
+            return False
+
+        energy_value = float(self.energy_expr.value)
+        if not np.isfinite(energy_value):
+            return False
+        if energy_value > float(self.energy_cap.value) + 5e-5:
+            return False
+
+        psd_matrix = np.asarray(self.big_psd_expr.value, dtype=float)
+        if not np.all(np.isfinite(psd_matrix)):
+            return False
+        psd_matrix = 0.5 * (psd_matrix + psd_matrix.T)
+        min_eigenvalue = float(np.linalg.eigvalsh(psd_matrix).min())
+        if min_eigenvalue < -5e-5:
+            return False
+        if float(self.psd_margin.value) < -5e-5:
+            return False
+
+        return True
+
+    def solve(
+        self,
+        energy_cap: float,
+        *,
+        solver: str = "AUTO",
+        solver_eps: float = 1e-6,
+        solver_max_iters: int = 40000,
+    ) -> tuple[str, bool]:
+        self.energy_cap.value = float(energy_cap)
+        m4_cap = (float(energy_cap) - self._energy_constant + self._beta_squared_over_four) / (0.75 * self.g**2)
+        if m4_cap <= 0:
+            return "energy_cap_too_low", False
+        self.m4_cap.value = float(m4_cap)
+        self.m2_cap.value = float(np.sqrt(m4_cap))
+        requested = solver.upper()
+        if requested == "AUTO":
+            solver_order = [name for name in ("CLARABEL", "SCS") if name in self.installed_solvers]
+        else:
+            solver_order = [requested]
+            if requested == "CLARABEL" and "SCS" in self.installed_solvers:
+                solver_order.append("SCS")
+
+        last_status = "solver_not_run"
+        for solver_name in solver_order:
+            solve_kwargs: dict[str, Any] = {
+                "solver": solver_name,
+                "warm_start": True,
+                "verbose": False,
+            }
+            if solver_name == "SCS":
+                solve_kwargs["eps"] = solver_eps
+                solve_kwargs["max_iters"] = solver_max_iters
+            elif solver_name == "CLARABEL":
+                solve_kwargs["max_iter"] = solver_max_iters
+            try:
+                self.problem.solve(**solve_kwargs)
+            except Exception:
+                last_status = f"{solver_name.lower()}_failed"
+                continue
+
+            status = str(self.problem.status)
+            last_status = status
+            feasible = status in {"optimal", "optimal_inaccurate"} and self._validate_current_solution()
+            if feasible:
+                return status, True
+            if status not in {"infeasible", "infeasible_inaccurate", "unbounded", "unbounded_inaccurate"}:
+                continue
+
+        return last_status, False
+
+
+def solve_figure3_point_bisection(
+    *,
+    g: float,
+    level: int,
+    epsilon: int,
+    lower_bound: float,
+    upper_hint: float | None = None,
+    pure_constraint_order_extra: int = 0,
+    operator_scaling: bool = True,
+    solver: str = "AUTO",
+    solver_eps: float = 1e-6,
+    solver_max_iters: int = 40000,
+    tolerance: float = 1e-3,
+    max_bisection_steps: int = 24,
+    max_upper_expansions: int = 12,
+) -> tuple[str, float | None]:
+    feasibility = Figure3FeasibilityProblem(
+        g=g,
+        level=level,
+        epsilon=epsilon,
+        pure_constraint_order_extra=pure_constraint_order_extra,
+        operator_scaling=operator_scaling,
+    )
+    perturbative = float(figure3_perturbation_curve(np.array([g]))[0])
+    lower = float(lower_bound) - max(5e-3, 1e-3 * max(1.0, abs(lower_bound)))
+    upper = max(lower + 0.05, perturbative + 0.25)
+    if upper_hint is not None and np.isfinite(upper_hint):
+        upper = max(upper, float(upper_hint))
+
+    step = max(0.25, 0.1 * max(1.0, abs(upper)))
+    last_status = "solver_not_run"
+    feasible = False
+    for _ in range(max_upper_expansions):
+        last_status, feasible = feasibility.solve(
+            upper,
+            solver=solver,
+            solver_eps=solver_eps,
+            solver_max_iters=solver_max_iters,
+        )
+        if feasible:
+            break
+        upper = upper + step
+        step *= 1.8
+    if not feasible:
+        return last_status, None
+
+    for _ in range(max_bisection_steps):
+        if upper - lower <= tolerance:
+            break
+        mid = 0.5 * (lower + upper)
+        last_status, feasible = feasibility.solve(
+            mid,
+            solver=solver,
+            solver_eps=solver_eps,
+            solver_max_iters=solver_max_iters,
+        )
+        if feasible:
+            upper = mid
+        else:
+            lower = mid
+
+    return last_status, upper
+
+
 def scan_figure3(config: Figure3Config) -> tuple[np.ndarray, dict[int, np.ndarray], dict[int, list[str]]]:
     g_values = np.linspace(config.g_min, config.g_max, config.num_g)
     bounds: dict[int, np.ndarray] = {}
@@ -288,6 +531,74 @@ def scan_figure3(config: Figure3Config) -> tuple[np.ndarray, dict[int, np.ndarra
         statuses[level] = level_statuses
         previous_level_bounds = level_bounds
     return g_values, bounds, statuses
+
+
+def refine_figure3_levels(
+    *,
+    g_values: np.ndarray,
+    seed_bounds: dict[int, np.ndarray],
+    levels: tuple[int, ...],
+    epsilon: int,
+    pure_constraint_order_extra: int = 0,
+    solver: str = "AUTO",
+    solver_eps: float = 1e-6,
+    solver_max_iters: int = 40000,
+    tolerance: float = 1e-3,
+) -> tuple[dict[int, np.ndarray], dict[int, list[str]]]:
+    bounds = {level: np.asarray(seed_bounds[level], dtype=float).copy() for level in seed_bounds}
+    statuses = {level: ["seed"] * len(g_values) for level in seed_bounds}
+
+    for level in levels:
+        if level - 1 not in bounds:
+            raise ValueError(f"missing seed bounds for level {level - 1}")
+        refined = np.full(len(g_values), np.nan, dtype=float)
+        refined_statuses: list[str] = []
+        previous_upper: float | None = None
+        previous_lower_curve = bounds[level - 1]
+
+        for index, g in enumerate(g_values):
+            lower_bound = float(previous_lower_curve[index])
+            if not np.isfinite(lower_bound):
+                refined_statuses.append("missing_lower_seed")
+                previous_upper = None
+                continue
+
+            upper_hint = None
+            if previous_upper is not None and np.isfinite(previous_upper):
+                upper_hint = max(previous_upper + 0.05, lower_bound + 0.05)
+            seed_current = bounds.get(level)
+            if seed_current is not None and np.isfinite(seed_current[index]):
+                candidate = float(seed_current[index])
+                if upper_hint is None:
+                    upper_hint = candidate
+                else:
+                    upper_hint = min(max(lower_bound + 0.02, candidate), upper_hint)
+                    upper_hint = max(upper_hint, lower_bound + 0.02)
+
+            status, value = solve_figure3_point_bisection(
+                g=float(g),
+                level=level,
+                epsilon=epsilon,
+                lower_bound=lower_bound,
+                upper_hint=upper_hint,
+                pure_constraint_order_extra=pure_constraint_order_extra,
+                operator_scaling=True,
+                solver=solver,
+                solver_eps=solver_eps,
+                solver_max_iters=solver_max_iters,
+                tolerance=tolerance,
+            )
+            refined_statuses.append(status)
+            if value is not None:
+                refined[index] = value
+                previous_upper = float(value)
+            else:
+                previous_upper = None
+
+        bounds[level] = refined
+        statuses[level] = refined_statuses
+
+    return bounds, statuses
 
 
 def write_figure3_csv(path: str | Path, g_values: np.ndarray, bounds: dict[int, np.ndarray], statuses: dict[int, list[str]]) -> None:

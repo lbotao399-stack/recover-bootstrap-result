@@ -1,0 +1,21 @@
+# Figure 3 certified K5/K6 subsets
+
+- Base data source:
+  - `runs/figure3_convex_monotone_k2_to_7/bounds.csv`
+- Low levels kept from the cleaned display of the previous run:
+  - `K = 2, 3, 4`
+- Higher levels re-checked with a stricter feasibility test:
+  - fixed energy cap `E_cap = E_raw + 0.05`
+  - same quartic model and recursion
+  - explicit post-solve checks on
+    - pure-`p` constraint residuals
+    - energy-cap satisfaction
+    - PSD minimum eigenvalue
+- Current certified subset:
+  - `K = 5`: certified for `g = 0.2975, 0.38, 0.4625, 0.545, 0.6275, 0.71, 0.7925, 0.875, 0.9575, 1.04`
+  - `K = 6`: certified for `g = 0.4625, 0.545`
+- Display file:
+  - `figure3_certified_k5_k6.png`
+- Interpretation:
+  - this figure is intentionally conservative
+  - uncertified `K = 5, 6` points are omitted instead of being plotted as if they were reliable

@@ -13,6 +13,7 @@ import numpy as np
 FreeExpr = dict[int, complex]
 WordExpr = dict[tuple[str, ...], complex]
 FIGURE4_WKB_COEFFICIENT = 0.2610377147951411327
+FIGURE4_RR_DIMENSION_DEFAULT = 60
 
 
 def _import_cvxpy():
@@ -577,6 +578,170 @@ def figure4_wkb_curve(g_values: np.ndarray) -> np.ndarray:
     values = np.asarray(g_values, dtype=float)
     clipped = np.clip(values, 0.0, None)
     return FIGURE4_WKB_COEFFICIENT * np.power(clipped, 2.0 / 3.0)
+
+
+@lru_cache(maxsize=None)
+def _figure4_rr_ladder_matrix(dimension: int) -> np.ndarray:
+    ladder = np.zeros((dimension, dimension), dtype=float)
+    for n in range(1, dimension):
+        ladder[n - 1, n] = np.sqrt(float(n))
+    return ladder
+
+
+def _figure4_rr_basis_operators(
+    dimension: int,
+    *,
+    omega: float,
+    xi: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if dimension <= 0:
+        raise ValueError("dimension must be positive")
+    if omega <= 0.0:
+        raise ValueError("omega must be positive")
+    padded_dimension = dimension + 4
+    ladder = _figure4_rr_ladder_matrix(padded_dimension)
+    identity = np.eye(dimension, dtype=float)
+    x_osc_full = (ladder + ladder.T) / np.sqrt(2.0 * omega)
+    d_operator = ladder.T - ladder
+    with np.errstate(all="ignore"):
+        p_squared_full = -0.5 * omega * (d_operator @ d_operator)
+        x_osc_squared_full = x_osc_full @ x_osc_full
+        x_osc_cubed_full = x_osc_squared_full @ x_osc_full
+        x_osc_fourth_full = x_osc_squared_full @ x_osc_squared_full
+    x_osc = x_osc_full[:dimension, :dimension]
+    x_osc_squared = x_osc_squared_full[:dimension, :dimension]
+    x_osc_cubed = x_osc_cubed_full[:dimension, :dimension]
+    x_osc_fourth = x_osc_fourth_full[:dimension, :dimension]
+    p_squared = p_squared_full[:dimension, :dimension]
+    x_operator = xi * identity + x_osc
+    x_squared = x_osc_squared + 2.0 * xi * x_osc + (xi * xi) * identity
+    x_fourth = (
+        x_osc_fourth
+        + 4.0 * xi * x_osc_cubed
+        + 6.0 * xi * xi * x_osc_squared
+        + 4.0 * xi * xi * xi * x_osc
+        + (xi**4) * identity
+    )
+    return x_operator, p_squared, x_squared, x_fourth
+
+
+@lru_cache(maxsize=None)
+def figure4_rr_leading_eigenvalue(
+    dimension: int = FIGURE4_RR_DIMENSION_DEFAULT,
+    omega: float = 1.0,
+    xi: float = 0.0,
+) -> float:
+    x_operator, p_squared, _, x_fourth = _figure4_rr_basis_operators(
+        dimension,
+        omega=omega,
+        xi=xi,
+    )
+    h_lead = 0.5 * p_squared + 0.5 * x_fourth - x_operator
+    return float(np.linalg.eigvalsh(h_lead).min())
+
+
+def figure4_rr_leading_curve(
+    g_values: np.ndarray,
+    *,
+    dimension: int = FIGURE4_RR_DIMENSION_DEFAULT,
+    omega: float = 1.0,
+    xi: float = 0.0,
+) -> np.ndarray:
+    coefficient = figure4_rr_leading_eigenvalue(dimension=dimension, omega=omega, xi=xi)
+    values = np.asarray(g_values, dtype=float)
+    clipped = np.clip(values, 0.0, None)
+    return coefficient * np.power(clipped, 2.0 / 3.0)
+
+
+def figure4_rr_classical_basis(lambda_value: float) -> tuple[float, float]:
+    roots = np.roots(np.array([2.0, 0.0, -0.5 * lambda_value, -1.0], dtype=float))
+    real_roots = roots[np.abs(roots.imag) < 1e-10].real
+    if real_roots.size == 0:
+        raise RuntimeError("no real classical stationary point found")
+    xi = float(np.max(real_roots))
+    curvature = max(1e-12, 6.0 * xi * xi - 0.5 * lambda_value)
+    omega = float(np.sqrt(curvature))
+    return xi, omega
+
+
+def figure4_rr_full_scaled_eigenvalue(
+    lambda_value: float,
+    *,
+    dimension: int = FIGURE4_RR_DIMENSION_DEFAULT,
+    omega: float | None = None,
+    xi: float | None = None,
+    use_classical_basis: bool = True,
+) -> float:
+    if xi is None or omega is None:
+        if use_classical_basis:
+            xi, omega = figure4_rr_classical_basis(lambda_value)
+        else:
+            xi = 0.0 if xi is None else xi
+            omega = 1.0 if omega is None else omega
+    x_operator, p_squared, x_squared, x_fourth = _figure4_rr_basis_operators(
+        dimension,
+        omega=float(omega),
+        xi=float(xi),
+    )
+    h_full = 0.5 * p_squared + 0.5 * x_fourth - x_operator - 0.25 * lambda_value * x_squared
+    return float(np.linalg.eigvalsh(h_full).min())
+
+
+def figure4_rr_full_energy(
+    g: float,
+    *,
+    dimension: int = FIGURE4_RR_DIMENSION_DEFAULT,
+    omega: float | None = None,
+    xi: float | None = None,
+    use_classical_basis: bool = True,
+) -> float:
+    if g <= 0.0:
+        return np.nan
+    lambda_value = g ** (-4.0 / 3.0)
+    scaled_eigenvalue = figure4_rr_full_scaled_eigenvalue(
+        lambda_value,
+        dimension=dimension,
+        omega=omega,
+        xi=xi,
+        use_classical_basis=use_classical_basis,
+    )
+    return float((1.0 / (32.0 * g * g)) + (g ** (2.0 / 3.0)) * scaled_eigenvalue)
+
+
+def figure4_rr_full_curve(
+    g_values: np.ndarray,
+    *,
+    dimension: int = FIGURE4_RR_DIMENSION_DEFAULT,
+    omega: float | None = None,
+    xi: float | None = None,
+    use_classical_basis: bool = True,
+) -> np.ndarray:
+    values = np.asarray(g_values, dtype=float)
+    result = np.full(values.shape, np.nan, dtype=float)
+    for index, g in np.ndenumerate(values):
+        result[index] = figure4_rr_full_energy(
+            float(g),
+            dimension=dimension,
+            omega=omega,
+            xi=xi,
+            use_classical_basis=use_classical_basis,
+        )
+    return result
+
+
+def figure4_rr_convergence(
+    dimensions: tuple[int, ...] = (20, 30, 40, 50, 60),
+    *,
+    omega: float = 1.0,
+    xi: float = 0.0,
+) -> list[dict[str, float]]:
+    return [
+        {
+            "dimension": float(dimension),
+            "leading_eigenvalue": figure4_rr_leading_eigenvalue(dimension=dimension, omega=omega, xi=xi),
+        }
+        for dimension in dimensions
+    ]
 
 
 def _status_tag(result: Figure4FeasibilityResult) -> str:
@@ -1181,6 +1346,11 @@ def plot_figure4(
     plt = _import_matplotlib()
     figure, axis = plt.subplots(figsize=(9.4, 7.0))
     dense_g = np.linspace(float(np.min(g_values)), float(np.max(g_values)), 800)
+    rr_start = max(
+        0.05,
+        float(np.min(g_values[g_values > 0.0])) if np.any(g_values > 0.0) else 0.05,
+    )
+    rr_full_g = np.linspace(rr_start, float(np.max(g_values)), 220)
     axis.plot(
         dense_g,
         figure4_wkb_curve(dense_g),
@@ -1188,6 +1358,23 @@ def plot_figure4(
         linewidth=2.6,
         linestyle="--",
         label="WKB",
+        zorder=0,
+    )
+    axis.plot(
+        dense_g,
+        figure4_rr_leading_curve(dense_g),
+        color="#ff7f00",
+        linewidth=2.2,
+        label="RR lead",
+        zorder=0,
+    )
+    axis.plot(
+        rr_full_g,
+        figure4_rr_full_curve(rr_full_g),
+        color="#e31a1c",
+        linewidth=2.0,
+        linestyle="-.",
+        label="RR full",
         zorder=0,
     )
     lower_mask = np.isfinite(lower)
@@ -1281,6 +1468,97 @@ def plot_figure4_gap(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output_path, dpi=200)
     plt.close(figure)
+
+
+def run_figure4_rr_benchmarks(
+    *,
+    out_dir: str | Path,
+    g_values: np.ndarray | None = None,
+    dimension: int = FIGURE4_RR_DIMENSION_DEFAULT,
+) -> dict[str, Any]:
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    resolved_g = (
+        np.linspace(0.0, 100.0, 401, dtype=float)
+        if g_values is None
+        else np.asarray(g_values, dtype=float)
+    )
+    convergence_rows = figure4_rr_convergence()
+    wkb = figure4_wkb_curve(resolved_g)
+    rr_lead = figure4_rr_leading_curve(resolved_g, dimension=dimension)
+    rr_full = figure4_rr_full_curve(resolved_g, dimension=dimension)
+
+    (output_dir / "config.json").write_text(
+        json.dumps(
+            {
+                "mode": "Figure 4 RR benchmarks",
+                "dimension": dimension,
+                "g_values": resolved_g.tolist(),
+                "wkb_coefficient": FIGURE4_WKB_COEFFICIENT,
+                "rr_leading_dimension": dimension,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    with (output_dir / "rr_convergence.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["dimension", "leading_eigenvalue"])
+        writer.writeheader()
+        writer.writerows(convergence_rows)
+
+    with (output_dir / "rr_curves.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["g", "wkb", "rr_lead", "rr_full"])
+        writer.writeheader()
+        for g, wkb_value, rr_lead_value, rr_full_value in zip(resolved_g, wkb, rr_lead, rr_full, strict=False):
+            writer.writerow(
+                {
+                    "g": float(g),
+                    "wkb": float(wkb_value),
+                    "rr_lead": float(rr_lead_value),
+                    "rr_full": float(rr_full_value) if np.isfinite(rr_full_value) else np.nan,
+                }
+            )
+
+    plt = _import_matplotlib()
+    figure, axis = plt.subplots(figsize=(9.0, 6.6))
+    axis.plot(resolved_g, wkb, color="#1f78b4", linewidth=2.4, linestyle="--", label="WKB")
+    axis.plot(resolved_g, rr_lead, color="#ff7f00", linewidth=2.2, label="RR lead")
+    axis.plot(resolved_g, rr_full, color="#e31a1c", linewidth=2.0, linestyle="-.", label="RR full")
+    axis.set_xlim(0.0, 100.0)
+    axis.set_ylim(0.0, 7.0)
+    axis.set_xlabel(r"$g$")
+    axis.set_ylabel(r"$E$")
+    axis.set_title("Figure 4 reference curves")
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    figure.tight_layout()
+    figure.savefig(output_dir / "figure4_rr_reference_curves.png", dpi=190)
+    plt.close(figure)
+
+    summary_lines = [
+        "# Figure 4 RR benchmarks",
+        "",
+        f"- WKB coefficient: `{FIGURE4_WKB_COEFFICIENT:.16f}`",
+        f"- RR leading coefficient at `N={dimension}`: `{figure4_rr_leading_eigenvalue(dimension=dimension):.16f}`",
+        "- Full finite-g RR uses the shifted-scaled Hamiltonian",
+        "  - `H = 1/(32 g^2) + g^{2/3} Hhat_lambda`",
+        "  - `Hhat_lambda = q^2/2 + z^4/2 - z - lambda z^2/4`",
+        "  - HO basis centered at the lambda-dependent classical minimum",
+        "",
+        "Leading-Hamiltonian convergence:",
+    ]
+    summary_lines.extend(
+        [f"- N={int(row['dimension'])}: {row['leading_eigenvalue']:.16f}" for row in convergence_rows]
+    )
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return {
+        "g_values": resolved_g,
+        "wkb": wkb,
+        "rr_lead": rr_lead,
+        "rr_full": rr_full,
+        "convergence_rows": convergence_rows,
+    }
 
 
 def _load_branch_anchors(csv_path: str | Path, *, energy_column: str = "lower_energy") -> list[Figure4BranchAnchor]:

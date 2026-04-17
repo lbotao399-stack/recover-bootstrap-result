@@ -6,10 +6,14 @@ import numpy as np
 from susy_mp_bootstrap.figure4_cubic import (
     BASIS_B5,
     BASIS_C4,
+    FIGURE4_RR_DIMENSION_DEFAULT,
     FIGURE4_WKB_COEFFICIENT,
     Figure4Reducer,
     figure4_ground_basis,
     figure4_operator_basis,
+    figure4_rr_classical_basis,
+    figure4_rr_full_energy,
+    figure4_rr_leading_eigenvalue,
     figure4_wkb_curve,
 )
 
@@ -74,3 +78,27 @@ def test_wkb_curve_matches_large_g_formula() -> None:
     assert energies == pytest.approx(
         np.array([0.0, FIGURE4_WKB_COEFFICIENT, 4.0 * FIGURE4_WKB_COEFFICIENT], dtype=float)
     )
+
+
+def test_rr_leading_coefficient_matches_theory_value() -> None:
+    coefficient = figure4_rr_leading_eigenvalue(dimension=FIGURE4_RR_DIMENSION_DEFAULT)
+    assert coefficient == pytest.approx(0.28106780538565, abs=2e-12)
+
+
+def test_rr_leading_variational_sequence_is_monotone() -> None:
+    values = [
+        figure4_rr_leading_eigenvalue(dimension=dimension)
+        for dimension in (20, 30, 40, 50, 60)
+    ]
+    assert values[1] <= values[0]
+    assert values[2] <= values[1]
+    assert values[3] <= values[2]
+    assert values[4] <= values[3]
+
+
+def test_rr_full_energy_uses_positive_frequency_classical_basis() -> None:
+    xi, omega = figure4_rr_classical_basis(1.0)
+    assert omega > 0.0
+    energy = figure4_rr_full_energy(5.0)
+    assert np.isfinite(energy)
+    assert energy > 0.0

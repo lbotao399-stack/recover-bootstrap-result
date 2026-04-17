@@ -1,0 +1,18 @@
+{
+  "levels": [
+    5,
+    6,
+    7,
+    8
+  ],
+  "u_min": 0.0,
+  "u_max": 3.0,
+  "e_min": 0.0,
+  "e_max": 5.0,
+  "num_u": 241,
+  "num_e": 251,
+  "g": 1.0,
+  "epsilon": -1,
+  "tolerance": 1e-09,
+  "search_iterations": 28
+}

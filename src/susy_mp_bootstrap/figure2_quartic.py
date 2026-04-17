@@ -40,6 +40,36 @@ class Figure2ExConfig:
         }
 
 
+@dataclass(frozen=True)
+class Figure2EuConfig:
+    levels: tuple[int, ...] = (5, 6, 7, 8)
+    u_min: float = 0.0
+    u_max: float = 3.0
+    e_min: float = 0.0
+    e_max: float = 5.0
+    num_u: int = 241
+    num_e: int = 251
+    g: float = 1.0
+    epsilon: int = -1
+    tolerance: float = 1e-9
+    search_iterations: int = 28
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "levels": list(self.levels),
+            "u_min": self.u_min,
+            "u_max": self.u_max,
+            "e_min": self.e_min,
+            "e_max": self.e_max,
+            "num_u": self.num_u,
+            "num_e": self.num_e,
+            "g": self.g,
+            "epsilon": self.epsilon,
+            "tolerance": self.tolerance,
+            "search_iterations": self.search_iterations,
+        }
+
+
 def quartic_moments(
     level: int,
     *,
@@ -107,6 +137,19 @@ def quartic_affine_hankel_pencil(
     matrix_u0 = quartic_hankel_matrix(level, energy=energy, mean_x=mean_x, u=0.0, epsilon=epsilon, g=g)
     matrix_u1 = quartic_hankel_matrix(level, energy=energy, mean_x=mean_x, u=1.0, epsilon=epsilon, g=g)
     return matrix_u0, matrix_u1 - matrix_u0
+
+
+def quartic_affine_mean_x_pencil(
+    level: int,
+    *,
+    energy: float,
+    u: float,
+    epsilon: int,
+    g: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    matrix_a0 = quartic_hankel_matrix(level, energy=energy, mean_x=0.0, u=u, epsilon=epsilon, g=g)
+    matrix_a1 = quartic_hankel_matrix(level, energy=energy, mean_x=1.0, u=u, epsilon=epsilon, g=g)
+    return matrix_a0, matrix_a1 - matrix_a0
 
 
 def quartic_min_eigenvalue(
@@ -190,6 +233,39 @@ def quartic_projected_feasible(
     return best_value >= -tolerance, best_u, best_value
 
 
+def quartic_projected_feasible_u(
+    level: int,
+    *,
+    energy: float,
+    u: float,
+    epsilon: int,
+    g: float = 1.0,
+    tolerance: float = 1e-9,
+    search_iterations: int = 28,
+) -> tuple[bool, float, float]:
+    if u < 0:
+        return False, float("nan"), float("-inf")
+    limit = math.sqrt(float(u))
+    matrix_a0, matrix_a_slope = quartic_affine_mean_x_pencil(
+        level,
+        energy=energy,
+        u=u,
+        epsilon=epsilon,
+        g=g,
+    )
+
+    def evaluator(mean_x: float) -> float:
+        return quartic_min_eigenvalue(matrix_a0, matrix_a_slope, u=mean_x)
+
+    best_a, best_value = _maximize_concave_on_interval(
+        evaluator,
+        lower=-limit,
+        upper=limit,
+        iterations=search_iterations,
+    )
+    return best_value >= -tolerance, best_a, best_value
+
+
 def scan_figure2_ex(config: Figure2ExConfig) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray], dict[int, np.ndarray]]:
     x_values = np.linspace(config.x_min, config.x_max, config.num_x)
     e_values = np.linspace(config.e_min, config.e_max, config.num_e)
@@ -229,6 +305,37 @@ def scan_figure2_ex(config: Figure2ExConfig) -> tuple[np.ndarray, np.ndarray, di
     return x_values, e_values, masks, best_u_values
 
 
+def scan_figure2_eu(config: Figure2EuConfig) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray], dict[int, np.ndarray]]:
+    u_values = np.linspace(config.u_min, config.u_max, config.num_u)
+    e_values = np.linspace(config.e_min, config.e_max, config.num_e)
+    masks: dict[int, np.ndarray] = {}
+    best_a_values: dict[int, np.ndarray] = {}
+
+    candidate_mask = np.ones((config.num_e, config.num_u), dtype=bool)
+    for level in config.levels:
+        mask = np.zeros((config.num_e, config.num_u), dtype=bool)
+        a_star = np.full((config.num_e, config.num_u), np.nan, dtype=float)
+        for e_index, energy in enumerate(e_values):
+            for u_index, u in enumerate(u_values):
+                if not candidate_mask[e_index, u_index]:
+                    continue
+                feasible, best_a, _ = quartic_projected_feasible_u(
+                    level,
+                    energy=float(energy),
+                    u=float(u),
+                    epsilon=config.epsilon,
+                    g=config.g,
+                    tolerance=config.tolerance,
+                    search_iterations=config.search_iterations,
+                )
+                mask[e_index, u_index] = feasible
+                a_star[e_index, u_index] = best_a if feasible else np.nan
+        masks[level] = mask
+        best_a_values[level] = a_star
+        candidate_mask = mask
+    return u_values, e_values, masks, best_a_values
+
+
 def write_feasible_points_csv(path: str | Path, x_values: np.ndarray, e_values: np.ndarray, masks: dict[int, np.ndarray]) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,6 +350,24 @@ def write_feasible_points_csv(path: str | Path, x_values: np.ndarray, e_values: 
                         "level": level,
                         "energy": float(e_values[e_index]),
                         "x": float(x_values[x_index]),
+                    }
+                )
+
+
+def write_feasible_u_points_csv(path: str | Path, u_values: np.ndarray, e_values: np.ndarray, masks: dict[int, np.ndarray]) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["level", "energy", "u"])
+        writer.writeheader()
+        for level in sorted(masks):
+            e_indices, u_indices = np.nonzero(masks[level])
+            for e_index, u_index in zip(e_indices, u_indices, strict=False):
+                writer.writerow(
+                    {
+                        "level": level,
+                        "energy": float(e_values[e_index]),
+                        "u": float(u_values[u_index]),
                     }
                 )
 
@@ -309,6 +434,58 @@ def plot_figure2_ex_regions(
     plt.close(figure)
 
 
+def plot_figure2_eu_regions(
+    u_values: np.ndarray,
+    e_values: np.ndarray,
+    masks: dict[int, np.ndarray],
+    *,
+    out_path: str | Path,
+) -> None:
+    plt = _import_matplotlib()
+    figure, axis = plt.subplots(figsize=(8.8, 7.2))
+    sorted_levels = sorted(masks)
+    color_map = plt.get_cmap("viridis")
+    color_positions = np.linspace(0.15, 0.95, len(sorted_levels))
+    colors = {
+        level: color_map(position)
+        for level, position in zip(sorted_levels, color_positions, strict=False)
+    }
+    u_grid, e_grid = np.meshgrid(u_values, e_values)
+    for level in sorted_levels:
+        mask = masks[level].astype(float)
+        color = colors[level]
+        axis.contourf(
+            u_grid,
+            e_grid,
+            mask,
+            levels=[0.5, 1.5],
+            colors=[color],
+            alpha=0.14,
+        )
+        axis.contour(
+            u_grid,
+            e_grid,
+            mask,
+            levels=[0.5],
+            colors=[color],
+            linewidths=1.35,
+        )
+    for level in sorted_levels:
+        axis.plot([], [], color=colors[level], linewidth=2.0, label=f"K={level}")
+    axis.set_xlim(u_values[0], u_values[-1])
+    axis.set_ylim(e_values[0], e_values[-1])
+    axis.set_xlabel(r"$\langle x^2 \rangle$")
+    axis.set_ylabel(r"$E$")
+    axis.set_title(r"Figure 2 quartic correction: $E$ vs $\langle x^2 \rangle$")
+    axis.grid(True, alpha=0.2)
+    axis.legend()
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
 def run_figure2_ex_scan(
     *,
     out_dir: str | Path,
@@ -364,4 +541,61 @@ def run_figure2_ex_scan(
         "e_values": e_values,
         "masks": masks,
         "best_u_values": best_u_values,
+    }
+
+
+def run_figure2_eu_scan(
+    *,
+    out_dir: str | Path,
+    config: Figure2EuConfig | None = None,
+) -> dict[str, Any]:
+    resolved_config = Figure2EuConfig() if config is None else config
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "config.json").write_text(
+        json.dumps(resolved_config.to_json(), indent=2),
+        encoding="utf-8",
+    )
+
+    u_values, e_values, masks, best_a_values = scan_figure2_eu(resolved_config)
+    write_feasible_u_points_csv(output_dir / "bounds.csv", u_values, e_values, masks)
+    plot_figure2_eu_regions(
+        u_values,
+        e_values,
+        masks,
+        out_path=output_dir / "figure2_eu_k5_to_8.png",
+    )
+
+    summary_lines = [
+        "# Figure 2 quartic correction: E vs <x^2>",
+        "",
+        "Model:",
+        "- `W(x) = x/(sqrt(2) g) + g x^3/(3 sqrt(2))`",
+        f"- `g = {resolved_config.g}`",
+        f"- `epsilon = {resolved_config.epsilon}`",
+        "- `a = <x>` is projected out",
+        "",
+        "Scan setup:",
+        f"- levels: {', '.join(str(level) for level in resolved_config.levels)}",
+        f"- x^2 range: [{resolved_config.u_min}, {resolved_config.u_max}] with {resolved_config.num_u} points",
+        f"- E range: [{resolved_config.e_min}, {resolved_config.e_max}] with {resolved_config.num_e} points",
+        "",
+        "Feasible point counts:",
+    ]
+    for level in sorted(masks):
+        count = int(np.count_nonzero(masks[level]))
+        edge_hits = int(
+            np.count_nonzero(
+                masks[level]
+                & np.isfinite(best_a_values[level])
+                & (np.abs(np.abs(best_a_values[level]) - np.sqrt(np.maximum(u_values[np.newaxis, :], 0.0))) < 1e-3)
+            )
+        )
+        summary_lines.append(f"- K={level}: {count} feasible grid points, {edge_hits} |a|=sqrt(u) hits")
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return {
+        "u_values": u_values,
+        "e_values": e_values,
+        "masks": masks,
+        "best_a_values": best_a_values,
     }

@@ -7,9 +7,19 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+import numpy as np
 import pytest
 
-from susy_mp_bootstrap.figure2_quartic import Figure2ExConfig, quartic_moments, scan_figure2_ex
+from susy_mp_bootstrap.figure2_quartic import (
+    Figure2EuConfig,
+    Figure2ExConfig,
+    quartic_affine_mean_x_pencil,
+    quartic_hankel_matrix,
+    quartic_moments,
+    quartic_projected_feasible_u,
+    scan_figure2_eu,
+    scan_figure2_ex,
+)
 
 
 def test_quartic_moments_match_closed_forms_epsilon_minus_one() -> None:
@@ -74,3 +84,36 @@ def test_figure2_scan_is_nested_and_symmetric() -> None:
     assert masks[6].sum() <= masks[5].sum()
     assert (masks[5] == masks[5][:, ::-1]).all()
     assert (masks[6] == masks[6][:, ::-1]).all()
+
+
+def test_quartic_affine_mean_x_pencil_reconstructs_matrix() -> None:
+    energy = 0.6
+    mean_x = 0.2
+    u = 0.9
+    base, slope = quartic_affine_mean_x_pencil(5, energy=energy, u=u, epsilon=-1, g=1.0)
+    reconstructed = base + mean_x * slope
+    direct = quartic_hankel_matrix(5, energy=energy, mean_x=mean_x, u=u, epsilon=-1, g=1.0)
+    assert np.allclose(reconstructed, direct)
+
+
+def test_quartic_projected_u_region_is_epsilon_independent() -> None:
+    energy = 1.0
+    u = 0.8
+    feasible_minus, _, _ = quartic_projected_feasible_u(5, energy=energy, u=u, epsilon=-1, g=1.0)
+    feasible_plus, _, _ = quartic_projected_feasible_u(5, energy=energy, u=u, epsilon=1, g=1.0)
+    assert feasible_minus == feasible_plus
+
+
+def test_figure2_eu_scan_is_nested() -> None:
+    config = Figure2EuConfig(
+        levels=(5, 6),
+        u_min=0.0,
+        u_max=1.5,
+        e_min=0.0,
+        e_max=1.5,
+        num_u=21,
+        num_e=21,
+        search_iterations=16,
+    )
+    _, _, masks, _ = scan_figure2_eu(config)
+    assert masks[6].sum() <= masks[5].sum()

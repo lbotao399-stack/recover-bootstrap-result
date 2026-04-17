@@ -2,7 +2,7 @@
 
 This repository contains the paper source for "Bootstrapping supersymmetric (matrix) quantum mechanics" together with the implementation workspace for reproducing its SUSY/MP bootstrap results.
 
-It is intentionally a standalone project and does not import or depend on the separate BFSS bootstrap repository.
+It is intentionally a standalone project with its own code, notes, tests, and run artifacts.
 
 Current layout:
 

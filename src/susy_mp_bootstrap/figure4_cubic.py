@@ -1181,7 +1181,15 @@ def plot_figure4(
     plt = _import_matplotlib()
     figure, axis = plt.subplots(figsize=(9.4, 7.0))
     dense_g = np.linspace(float(np.min(g_values)), float(np.max(g_values)), 800)
-    axis.plot(dense_g, figure4_wkb_curve(dense_g), color="#1f78b4", linewidth=1.5, label="WKB", zorder=0)
+    axis.plot(
+        dense_g,
+        figure4_wkb_curve(dense_g),
+        color="#1f78b4",
+        linewidth=2.6,
+        linestyle="--",
+        label="WKB",
+        zorder=0,
+    )
     lower_mask = np.isfinite(lower)
     upper_mask = np.isfinite(upper)
     if np.any(upper_mask):

@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from susy_mp_bootstrap.figure4_cubic import (
+    BASIS_B5,
+    BASIS_C4,
     Figure4Reducer,
     figure4_ground_basis,
     figure4_operator_basis,
@@ -14,8 +16,10 @@ def _expr_to_dict(expr: tuple[tuple[int, complex], ...]) -> dict[int, complex]:
 
 
 def test_basis_sizes_match_theory() -> None:
-    assert len(figure4_operator_basis()) == 20
-    assert len(figure4_ground_basis()) == 11
+    assert len(BASIS_B5) == 20
+    assert len(BASIS_C4) == 11
+    assert len(figure4_operator_basis()) == 12
+    assert len(figure4_ground_basis()) == 8
     assert () not in figure4_ground_basis()
 
 

@@ -93,6 +93,30 @@ def _generate_words(max_level: int) -> list[tuple[str, ...]]:
 
 BASIS_B5: tuple[tuple[str, ...], ...] = tuple(_generate_words(5))
 BASIS_C4: tuple[tuple[str, ...], ...] = tuple(word for word in _generate_words(4) if word)
+CANONICAL_BASIS_B5: tuple[tuple[str, ...], ...] = (
+    tuple(),
+    ("z",),
+    ("q",),
+    ("z", "z"),
+    ("q", "z"),
+    ("z", "z", "z"),
+    ("q", "q"),
+    ("q", "z", "z"),
+    ("z", "z", "z", "z"),
+    ("q", "q", "z"),
+    ("q", "z", "z", "z"),
+    ("z", "z", "z", "z", "z"),
+)
+CANONICAL_BASIS_C4: tuple[tuple[str, ...], ...] = (
+    ("z",),
+    ("z", "z"),
+    ("z", "z", "z"),
+    ("z", "z", "z", "z"),
+    ("q",),
+    ("q", "z"),
+    ("q", "z", "z"),
+    ("q", "q"),
+)
 
 
 class Figure4Reducer:
@@ -273,10 +297,18 @@ class Figure4Reducer:
 
 
 def figure4_operator_basis() -> tuple[tuple[str, ...], ...]:
-    return BASIS_B5
+    return CANONICAL_BASIS_B5
 
 
 def figure4_ground_basis() -> tuple[tuple[str, ...], ...]:
+    return CANONICAL_BASIS_C4
+
+
+def figure4_string_operator_basis() -> tuple[tuple[str, ...], ...]:
+    return BASIS_B5
+
+
+def figure4_string_ground_basis() -> tuple[tuple[str, ...], ...]:
     return BASIS_C4
 
 
@@ -332,9 +364,11 @@ class Figure4Config:
             "boundary_step_abs": self.boundary_step_abs,
             "boundary_step_rel": self.boundary_step_rel,
             "boundary_growth": self.boundary_growth,
-            "basis_size": 20,
-            "ground_basis_size": 11,
-            "basis": "shifted-scaled cubic SUSY QM",
+            "basis_size": 12,
+            "ground_basis_size": 8,
+            "basis": "shifted-scaled cubic SUSY QM with exact canonical basis compression",
+            "string_basis_size": 20,
+            "string_ground_basis_size": 11,
         }
 
 
@@ -402,9 +436,11 @@ def figure4_feasibility(
     if initial_guess is not None:
         variables.value = np.array(initial_guess, dtype=float)
 
+    ordinary_basis = figure4_operator_basis()
+    ground_basis = figure4_ground_basis()
     main_entries = [
-        [reducer.matrix_entry_expr(left, right) for right in BASIS_B5]
-        for left in BASIS_B5
+        [reducer.matrix_entry_expr(left, right) for right in ordinary_basis]
+        for left in ordinary_basis
     ]
     main_psd, _ = _build_real_psd_constraints(cp, main_entries, variables)
     margin = cp.Variable()
@@ -414,8 +450,8 @@ def figure4_feasibility(
     ground_psd = None
     if include_ground:
         ground_entries = [
-            [reducer.ground_entry_expr(left, right) for right in BASIS_C4]
-            for left in BASIS_C4
+            [reducer.ground_entry_expr(left, right) for right in ground_basis]
+            for left in ground_basis
         ]
         ground_psd, _ = _build_real_psd_constraints(cp, ground_entries, variables)
         constraints.append(ground_psd - margin * np.eye(ground_psd.shape[0]) >> 0)
@@ -896,8 +932,9 @@ def run_figure4_scan(
         "- sector fixed to `epsilon = -1`",
         "",
         "Matrices:",
-        "- ordinary bootstrap basis size: `20`",
-        "- ground-state basis size: `11`",
+        "- ordinary bootstrap basis size: `12`",
+        "- ground-state basis size: `8`",
+        "- unreduced string counts kept for reference: `20` and `11`",
         "",
         "Status counts:",
         f"- lower: {', '.join(f'{name}={count}' for name, count in zip(*np.unique(np.asarray(lower_statuses, dtype=object), return_counts=True), strict=False))}",

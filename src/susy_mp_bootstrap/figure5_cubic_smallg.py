@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from math import comb, factorial
+from math import comb, exp, factorial, log, sqrt
 from pathlib import Path
 from typing import Any
 import csv
@@ -77,14 +77,84 @@ def figure5_canonical_basis(level: int) -> tuple[tuple[int, int], ...]:
     return tuple(basis)
 
 
+def figure5_instanton_energy_scale(g: float) -> float:
+    if g <= 0.0:
+        return 0.0
+    return float((1.0 / (2.0 * np.pi)) * exp(-1.0 / (3.0 * g * g)))
+
+
+def figure5_energy_from_eta(g: float, eta: float) -> float:
+    return float(figure5_instanton_energy_scale(g) * exp(eta))
+
+
+def figure5_eta_from_energy(g: float, energy: float) -> float:
+    scale = figure5_instanton_energy_scale(g)
+    if g <= 0.0 or scale <= 0.0 or energy <= 0.0:
+        raise ValueError("eta is defined only for positive g and positive energy")
+    return float(log(energy / scale))
+
+
+def figure5_smallg_center_mu(g: float) -> float:
+    return float(-0.5 * g - (65.0 / 48.0) * g**3)
+
+
+def figure5_smallg_center_sigma2(g: float) -> float:
+    return float(0.5 + (53.0 / 48.0) * g**2)
+
+
+def figure5_smallg_center_sigma(g: float) -> float:
+    return float(sqrt(max(figure5_smallg_center_sigma2(g), 1e-12)))
+
+
+def figure5_ho_ground_moment(order: int) -> float:
+    if order < 0:
+        return 0.0
+    if order % 2 == 1:
+        return 0.0
+    value = 1.0
+    for factor in range(1, order, 2):
+        value *= factor
+    return float(value / (2 ** (order // 2)))
+
+
+def figure5_smallg_anchor(order: int, g: float) -> float:
+    if order == 0:
+        return 1.0
+    if order == 1:
+        return float(-0.5 * g - (65.0 / 48.0) * g**3)
+    if order == 2:
+        return float(0.5 + (65.0 / 48.0) * g**2 + (19165.0 / 2304.0) * g**4)
+    if order == 3:
+        return float(-(5.0 / 4.0) * g - (745.0 / 96.0) * g**3)
+    if order == 4:
+        return float(0.75 + (205.0 / 32.0) * g**2)
+    return figure5_ho_ground_moment(order)
+
+
+def figure5_smallg_scale(order: int, g: float) -> float:
+    if order <= 0:
+        return 1.0
+    if order % 2 == 1:
+        return float(max(abs(g), 1e-6))
+    return float(max(g * g, 1e-6))
+
+
 @dataclass(frozen=True)
 class Figure5Config:
     levels: tuple[int, ...] = (7, 8, 9, 10)
-    g_min: float = 0.35
+    g_min: float = 0.3
     g_max: float = 1.0
     num_g: int = 16
+    g_values_override: tuple[float, ...] | None = None
     e_min: float = 0.0
     e_max: float = 0.3
+    small_g_switch: float = 0.4
+    use_smallg_eta_scan: bool = True
+    smallg_eta_min: float = -6.0
+    smallg_eta_max: float = 6.0
+    use_smallg_centered_basis: bool = False
+    use_smallg_parity_variables: bool = False
+    use_smallg_nu_objective: bool = True
     solver: str = "AUTO"
     solver_eps: float = 1e-7
     solver_max_iters: int = 50000
@@ -100,6 +170,8 @@ class Figure5Config:
     use_completed_basis: bool = True
 
     def g_grid(self) -> np.ndarray:
+        if self.g_values_override is not None:
+            return np.array(sorted(self.g_values_override, reverse=True), dtype=float)
         return np.linspace(self.g_max, self.g_min, self.num_g)
 
     def to_json(self) -> dict[str, Any]:
@@ -108,8 +180,16 @@ class Figure5Config:
             "g_min": self.g_min,
             "g_max": self.g_max,
             "num_g": self.num_g,
+            "g_values_override": None if self.g_values_override is None else list(self.g_values_override),
             "e_min": self.e_min,
             "e_max": self.e_max,
+            "small_g_switch": self.small_g_switch,
+            "use_smallg_eta_scan": self.use_smallg_eta_scan,
+            "smallg_eta_min": self.smallg_eta_min,
+            "smallg_eta_max": self.smallg_eta_max,
+            "use_smallg_centered_basis": self.use_smallg_centered_basis,
+            "use_smallg_parity_variables": self.use_smallg_parity_variables,
+            "use_smallg_nu_objective": self.use_smallg_nu_objective,
             "solver": self.solver,
             "solver_eps": self.solver_eps,
             "solver_max_iters": self.solver_max_iters,
@@ -124,7 +204,7 @@ class Figure5Config:
             "x2_lock_to_edge": self.x2_lock_to_edge,
             "use_completed_basis": self.use_completed_basis,
             "basis": "canonical p^a x^b basis in original (x,p) variables",
-            "note": "small-g cubic ordinary bootstrap with RR full upper guide",
+            "note": "small-g cubic ordinary bootstrap with hybrid eta scan and centered basis below the small-g switch",
         }
 
 
@@ -138,6 +218,72 @@ class Figure5SolveResult:
     eq_residual: float | None
     psd_residual: float | None
     solver_name: str | None
+
+
+@dataclass
+class Figure5MomentRepresentation:
+    raw_moments: list[Any] | Any
+    decision_variable: Any
+    uses_smallg_parametrization: bool
+    anchors: np.ndarray | None
+    scales: np.ndarray | None
+
+    def set_initial_guess(self, initial_moments: np.ndarray | None) -> None:
+        if initial_moments is None:
+            return
+        if not self.uses_smallg_parametrization:
+            if initial_moments.shape == self.decision_variable.shape:
+                self.decision_variable.value = initial_moments.copy()
+            return
+        cutoff = len(self.anchors) - 1 if self.anchors is not None else 0
+        if initial_moments.shape != (cutoff + 1,):
+            return
+        delta = np.zeros(cutoff, dtype=float)
+        for order in range(1, cutoff + 1):
+            scale = float(self.scales[order])
+            if abs(scale) < 1e-15:
+                continue
+            delta[order - 1] = (float(initial_moments[order]) - float(self.anchors[order])) / scale
+        self.decision_variable.value = delta
+
+    def extract_raw_values(self) -> np.ndarray | None:
+        if not self.uses_smallg_parametrization:
+            if self.decision_variable.value is None:
+                return None
+            return np.asarray(self.decision_variable.value, dtype=float).reshape(-1)
+        if self.decision_variable.value is None or self.anchors is None or self.scales is None:
+            return None
+        delta = np.asarray(self.decision_variable.value, dtype=float).reshape(-1)
+        values = np.zeros(len(self.anchors), dtype=float)
+        values[0] = 1.0
+        for order in range(1, len(self.anchors)):
+            values[order] = float(self.anchors[order] + self.scales[order] * delta[order - 1])
+        return values
+
+
+def _build_moment_representation(cp, *, cutoff: int, g: float, use_smallg_parametrization: bool) -> Figure5MomentRepresentation:
+    if use_smallg_parametrization and g > 0.0:
+        anchors = np.array([figure5_smallg_anchor(order, g) for order in range(cutoff + 1)], dtype=float)
+        scales = np.array([1.0] + [figure5_smallg_scale(order, g) for order in range(1, cutoff + 1)], dtype=float)
+        delta = cp.Variable(cutoff)
+        raw_moments: list[Any] = [1.0]
+        for order in range(1, cutoff + 1):
+            raw_moments.append(float(anchors[order]) + float(scales[order]) * delta[order - 1])
+        return Figure5MomentRepresentation(
+            raw_moments=raw_moments,
+            decision_variable=delta,
+            uses_smallg_parametrization=True,
+            anchors=anchors,
+            scales=scales,
+        )
+    moments = cp.Variable(cutoff + 1)
+    return Figure5MomentRepresentation(
+        raw_moments=moments,
+        decision_variable=moments,
+        uses_smallg_parametrization=False,
+        anchors=None,
+        scales=None,
+    )
 
 
 class Figure5CubicReducer:
@@ -214,6 +360,29 @@ class Figure5CubicReducer:
             expr[index] = expr.get(index, 0.0 + 0.0j) + coefficient
         return expr
 
+    @staticmethod
+    def _shifted_power_coeffs(power: int, shift: float) -> dict[int, float]:
+        coeffs: dict[int, float] = {}
+        for degree in range(power + 1):
+            coeffs[degree] = comb(power, degree) * ((-shift) ** (power - degree))
+        return coeffs
+
+    def centered_matrix_entry_expr(self, left: tuple[int, int], right: tuple[int, int], *, mu: float, sigma: float) -> MomentExpr:
+        p_left, y_left = left
+        p_right, y_right = right
+        expr: MomentExpr = {}
+        scale_prefactor = sigma ** (p_left + p_right - y_left - y_right)
+        left_coeffs = self._shifted_power_coeffs(y_left, mu)
+        right_coeffs = self._shifted_power_coeffs(y_right, mu)
+        for x_left, coeff_left in left_coeffs.items():
+            for x_right, coeff_right in right_coeffs.items():
+                _expr_add_scaled(
+                    expr,
+                    self.matrix_entry_expr((p_left, x_left), (p_right, x_right)),
+                    scale_prefactor * coeff_left * coeff_right,
+                )
+        return expr
+
 
 def figure5_basis_size(level: int) -> int:
     return len(figure5_canonical_basis(level))
@@ -240,6 +409,20 @@ def _figure5_matrix_values(matrix_exprs: list[list[MomentExpr]], moment_values: 
     return 0.5 * (matrix + matrix.conj().T)
 
 
+def _figure5_matrix_exprs(
+    reducer: Figure5CubicReducer,
+    basis: tuple[tuple[int, int], ...],
+    *,
+    g: float,
+    use_centered_basis: bool,
+) -> list[list[MomentExpr]]:
+    if use_centered_basis and g > 0.0:
+        mu = figure5_smallg_center_mu(g)
+        sigma = figure5_smallg_center_sigma(g)
+        return [[reducer.centered_matrix_entry_expr(left, right, mu=mu, sigma=sigma) for right in basis] for left in basis]
+    return [[reducer.matrix_entry_expr(left, right) for right in basis] for left in basis]
+
+
 def _figure5_status_label(result: Figure5SolveResult) -> str:
     if result.solver_name is None:
         return result.status
@@ -247,11 +430,24 @@ def _figure5_status_label(result: Figure5SolveResult) -> str:
     return f"{result.solver_name.lower()}:{result.status}:{suffix}"
 
 
+def _figure5_smallg_energy_window(g: float, config: Figure5Config, rr_upper: float) -> tuple[float, float]:
+    scale = figure5_instanton_energy_scale(g)
+    if scale <= 0.0:
+        return config.e_min, min(config.e_max, rr_upper)
+    eta_low = config.smallg_eta_min
+    eta_high = min(config.smallg_eta_max, figure5_eta_from_energy(g, max(scale * exp(config.smallg_eta_min), config.e_max)))
+    rr_eta = min(eta_high, figure5_eta_from_energy(g, max(rr_upper, scale * exp(config.smallg_eta_min))))
+    return eta_low, max(rr_eta, eta_low)
+
+
 def figure5_feasibility(
     *,
     g: float,
     level: int,
     energy: float,
+    small_g_switch: float = 0.4,
+    use_smallg_centered_basis: bool = True,
+    use_smallg_parity_variables: bool = True,
     solver: str = "AUTO",
     solver_eps: float = 1e-7,
     solver_max_iters: int = 50000,
@@ -264,10 +460,17 @@ def figure5_feasibility(
     cp = _import_cvxpy()
     reducer = Figure5CubicReducer(g=g, energy=energy)
     cutoff = 2 * level
-    moments = cp.Variable(cutoff + 1)
-    if initial_moments is not None and initial_moments.shape == (cutoff + 1,):
-        moments.value = initial_moments.copy()
-    constraints = [moments[0] == 1.0]
+    moment_repr = _build_moment_representation(
+        cp,
+        cutoff=cutoff,
+        g=g,
+        use_smallg_parametrization=use_smallg_parity_variables and g < small_g_switch,
+    )
+    moment_repr.set_initial_guess(initial_moments)
+    moments = moment_repr.raw_moments
+    constraints = []
+    if not moment_repr.uses_smallg_parametrization:
+        constraints.append(moments[0] == 1.0)
 
     pure_relations = [reducer.pure_moment_relation(order) for order in range(3, cutoff + 1)]
     for expr in pure_relations:
@@ -275,7 +478,12 @@ def figure5_feasibility(
         constraints.append(_expr_imag(expr, moments) == 0.0)
 
     basis = figure5_ambient_basis(level) if use_completed_basis else figure5_canonical_basis(level)
-    matrix_exprs = [[reducer.matrix_entry_expr(left, right) for right in basis] for left in basis]
+    matrix_exprs = _figure5_matrix_exprs(
+        reducer,
+        basis,
+        g=g,
+        use_centered_basis=use_smallg_centered_basis and g < small_g_switch,
+    )
     matrix = cp.Variable((len(basis), len(basis)), hermitian=True)
     margin = cp.Variable()
     constraints.append(margin <= 1.0)
@@ -325,7 +533,8 @@ def figure5_feasibility(
             continue
 
         status = str(problem.status)
-        if status not in {"optimal", "optimal_inaccurate"} or moments.value is None or margin.value is None or matrix.value is None:
+        moment_values = moment_repr.extract_raw_values()
+        if status not in {"optimal", "optimal_inaccurate"} or moment_values is None or margin.value is None or matrix.value is None:
             best = Figure5SolveResult(
                 status=status,
                 feasible=False,
@@ -338,7 +547,6 @@ def figure5_feasibility(
             )
             continue
 
-        moment_values = np.asarray(moments.value, dtype=float).reshape(-1)
         norm_m = max(1.0, float(np.max(np.abs(moment_values))))
         eq_residual = 0.0
         for expr in pure_relations:
@@ -375,6 +583,10 @@ def figure5_minimize_x2(
     g: float,
     level: int,
     energy: float,
+    small_g_switch: float = 0.4,
+    use_smallg_centered_basis: bool = True,
+    use_smallg_parity_variables: bool = True,
+    use_smallg_nu_objective: bool = True,
     solver: str = "AUTO",
     solver_eps: float = 1e-7,
     solver_max_iters: int = 50000,
@@ -387,10 +599,17 @@ def figure5_minimize_x2(
     cp = _import_cvxpy()
     reducer = Figure5CubicReducer(g=g, energy=energy)
     cutoff = 2 * level
-    moments = cp.Variable(cutoff + 1)
-    if initial_moments is not None and initial_moments.shape == (cutoff + 1,):
-        moments.value = initial_moments.copy()
-    constraints = [moments[0] == 1.0]
+    moment_repr = _build_moment_representation(
+        cp,
+        cutoff=cutoff,
+        g=g,
+        use_smallg_parametrization=use_smallg_parity_variables and g < small_g_switch,
+    )
+    moment_repr.set_initial_guess(initial_moments)
+    moments = moment_repr.raw_moments
+    constraints = []
+    if not moment_repr.uses_smallg_parametrization:
+        constraints.append(moments[0] == 1.0)
 
     pure_relations = [reducer.pure_moment_relation(order) for order in range(3, cutoff + 1)]
     for expr in pure_relations:
@@ -398,7 +617,12 @@ def figure5_minimize_x2(
         constraints.append(_expr_imag(expr, moments) == 0.0)
 
     basis = figure5_ambient_basis(level) if use_completed_basis else figure5_canonical_basis(level)
-    matrix_exprs = [[reducer.matrix_entry_expr(left, right) for right in basis] for left in basis]
+    matrix_exprs = _figure5_matrix_exprs(
+        reducer,
+        basis,
+        g=g,
+        use_centered_basis=use_smallg_centered_basis and g < small_g_switch,
+    )
     matrix = cp.Variable((len(basis), len(basis)), hermitian=True)
     for row, left in enumerate(basis):
         for column in range(row, len(basis)):
@@ -406,7 +630,10 @@ def figure5_minimize_x2(
             if (2 * left[0] + left[1]) + (2 * right[0] + right[1]) <= level or not use_completed_basis:
                 constraints.append(matrix[row, column] == _expr_complex(matrix_exprs[row][column], moments))
     constraints.append(matrix >> 0)
-    problem = cp.Problem(cp.Minimize(moments[2]), constraints)
+    objective_expr = moments[2]
+    if use_smallg_nu_objective and g < small_g_switch:
+        objective_expr = (moments[2] - 0.5) / max(g * g, 1e-6)
+    problem = cp.Problem(cp.Minimize(objective_expr), constraints)
 
     best = Figure5SolveResult(
         status="solver_not_run",
@@ -445,7 +672,8 @@ def figure5_minimize_x2(
             continue
 
         status = str(problem.status)
-        if status not in {"optimal", "optimal_inaccurate"} or moments.value is None or matrix.value is None:
+        moment_values = moment_repr.extract_raw_values()
+        if status not in {"optimal", "optimal_inaccurate"} or moment_values is None or matrix.value is None:
             best = Figure5SolveResult(
                 status=status,
                 feasible=False,
@@ -458,7 +686,6 @@ def figure5_minimize_x2(
             )
             continue
 
-        moment_values = np.asarray(moments.value, dtype=float).reshape(-1)
         norm_m = max(1.0, float(np.max(np.abs(moment_values))))
         eq_residual = 0.0
         for expr in pure_relations:
@@ -515,15 +742,29 @@ def _find_energy_lower_bound(
     energy_floor: float | None = None,
 ) -> Figure5EnergyPoint:
     rr_upper = min(config.e_max, float(figure4_rr_full_energy(g)))
+    use_eta_mode = config.use_smallg_eta_scan and g < config.small_g_switch and g > 0.0
     probes = np.linspace(rr_upper, config.e_max, config.upper_probe_points)
-    high_energy = None
+    high_parameter = None
     high_result: Figure5SolveResult | None = None
     guess = initial_moments
-    for energy in np.unique(probes):
+    if use_eta_mode:
+        eta_low, eta_rr = _figure5_smallg_energy_window(g, config, rr_upper)
+        eta_cap = min(config.smallg_eta_max, figure5_eta_from_energy(g, max(config.e_max, figure5_energy_from_eta(g, config.smallg_eta_min))))
+        coarse = np.linspace(eta_rr, eta_cap, config.upper_probe_points)
+        local_center = np.arange(np.ceil(max(eta_rr, -2.0)), np.floor(min(eta_cap, 2.0)) + 1.0)
+        probe_parameters = np.unique(np.concatenate((coarse, local_center, np.array([0.0]))))
+        probe_parameters = probe_parameters[(probe_parameters >= eta_rr) & (probe_parameters <= eta_cap)]
+    else:
+        probe_parameters = np.unique(probes)
+    for parameter in probe_parameters:
+        energy = figure5_energy_from_eta(g, float(parameter)) if use_eta_mode else float(parameter)
         result = figure5_feasibility(
             g=g,
             level=level,
             energy=float(energy),
+            small_g_switch=config.small_g_switch,
+            use_smallg_centered_basis=config.use_smallg_centered_basis,
+            use_smallg_parity_variables=config.use_smallg_parity_variables,
             solver=config.solver,
             solver_eps=config.solver_eps,
             solver_max_iters=config.solver_max_iters,
@@ -534,14 +775,24 @@ def _find_energy_lower_bound(
             use_completed_basis=config.use_completed_basis,
         )
         if result.feasible:
-            high_energy = float(energy)
+            high_parameter = float(parameter)
             high_result = result
             guess = result.moments
             break
-    if high_energy is None or high_result is None:
+    if high_parameter is None or high_result is None:
         return Figure5EnergyPoint(g=g, energy=None, status="upper:not_found", rr_upper=rr_upper, moments=None)
 
-    low_energy = config.e_min if energy_floor is None else max(config.e_min, energy_floor)
+    if use_eta_mode:
+        low_parameter = config.smallg_eta_min
+        if energy_floor is not None and energy_floor > 0.0:
+            low_parameter = max(low_parameter, figure5_eta_from_energy(g, energy_floor))
+        low_energy_ref = figure5_energy_from_eta(g, low_parameter)
+    else:
+        low_energy_ref = config.e_min if energy_floor is None else max(config.e_min, energy_floor)
+        low_parameter = low_energy_ref
+
+    high_energy = figure5_energy_from_eta(g, high_parameter) if use_eta_mode else float(high_parameter)
+    low_energy = low_energy_ref
     if low_energy >= high_energy:
         return Figure5EnergyPoint(
             g=g,
@@ -554,6 +805,9 @@ def _find_energy_lower_bound(
         g=g,
         level=level,
         energy=low_energy,
+        small_g_switch=config.small_g_switch,
+        use_smallg_centered_basis=config.use_smallg_centered_basis,
+        use_smallg_parity_variables=config.use_smallg_parity_variables,
         solver=config.solver,
         solver_eps=config.solver_eps,
         solver_max_iters=config.solver_max_iters,
@@ -572,15 +826,19 @@ def _find_energy_lower_bound(
             moments=low_result.moments,
         )
 
-    best_energy = high_energy
+    best_parameter = high_parameter
     best_result = high_result
-    lower_infeasible = low_energy
+    lower_infeasible = low_parameter
     for _ in range(config.bisection_steps):
-        middle = 0.5 * (lower_infeasible + best_energy)
+        middle = 0.5 * (lower_infeasible + best_parameter)
+        energy = figure5_energy_from_eta(g, middle) if use_eta_mode else middle
         result = figure5_feasibility(
             g=g,
             level=level,
-            energy=middle,
+            energy=energy,
+            small_g_switch=config.small_g_switch,
+            use_smallg_centered_basis=config.use_smallg_centered_basis,
+            use_smallg_parity_variables=config.use_smallg_parity_variables,
             solver=config.solver,
             solver_eps=config.solver_eps,
             solver_max_iters=config.solver_max_iters,
@@ -591,10 +849,11 @@ def _find_energy_lower_bound(
             use_completed_basis=config.use_completed_basis,
         )
         if result.feasible:
-            best_energy = middle
+            best_parameter = middle
             best_result = result
         else:
             lower_infeasible = middle
+    best_energy = figure5_energy_from_eta(g, best_parameter) if use_eta_mode else best_parameter
     return Figure5EnergyPoint(
         g=g,
         energy=best_energy,
@@ -632,6 +891,10 @@ def _find_x2_lower_bound(
             g=g,
             level=level,
             energy=float(energy),
+            small_g_switch=config.small_g_switch,
+            use_smallg_centered_basis=config.use_smallg_centered_basis,
+            use_smallg_parity_variables=config.use_smallg_parity_variables,
+            use_smallg_nu_objective=config.use_smallg_nu_objective,
             solver=config.solver,
             solver_eps=config.solver_eps,
             solver_max_iters=config.solver_max_iters,
@@ -831,11 +1094,16 @@ def run_figure5_scan(
         "- Model: `W(x) = x^2 / 2 + g x^3 / 3`",
         "- Sector fixed to `epsilon = -1`",
         "- Variable regime: original `(x,p)` reducer, small/intermediate `g`",
+        f"- Small-g switch: `g < {resolved_config.small_g_switch}`",
+        f"- Small-g eta search: `{resolved_config.use_smallg_eta_scan}`",
+        f"- Small-g centered basis (experimental): `{resolved_config.use_smallg_centered_basis}`",
+        f"- Small-g parity moment variables (experimental): `{resolved_config.use_smallg_parity_variables}`",
         "- Basis mode:",
         f"  - `use_completed_basis = {resolved_config.use_completed_basis}`",
         "  - full theoretical basis remains `p^a x^b` with `2a + b <= L`",
         "  - active numerical run uses the smaller ambient basis with Hermitian completion",
         "- Left panel: fixed-energy feasibility + bisection for `E` lower bounds",
+        "- Small-g left panel uses instanton-rescaled `eta` probes instead of linear energy probes",
         "- Right panel: `m_2` minimization is evaluated only in the narrow ground-state edge window",
         "",
         "Basis sizes:",

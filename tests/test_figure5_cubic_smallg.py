@@ -4,9 +4,12 @@ import pytest
 
 from susy_mp_bootstrap.figure5_cubic_smallg import (
     Figure5CubicReducer,
+    Figure5Config,
     figure5_ambient_basis_size,
     figure5_basis_size,
     figure5_canonical_basis,
+    figure5_energy_from_eta,
+    figure5_eta_from_energy,
 )
 
 
@@ -40,3 +43,15 @@ def test_figure5_matrix_entry_is_hermitian_under_swap() -> None:
     left = reducer.matrix_entry_expr((1, 2), (0, 3))
     right = reducer.matrix_entry_expr((0, 3), (1, 2))
     assert left == pytest.approx({index: value.conjugate() for index, value in right.items()})
+
+
+def test_figure5_eta_energy_roundtrip() -> None:
+    g = 0.3
+    eta = 0.75
+    energy = figure5_energy_from_eta(g, eta)
+    assert figure5_eta_from_energy(g, energy) == pytest.approx(eta)
+
+
+def test_figure5_g_values_override_is_sorted_descending() -> None:
+    config = Figure5Config(g_values_override=(0.3, 1.0, 0.5))
+    assert list(config.g_grid()) == pytest.approx([1.0, 0.5, 0.3])

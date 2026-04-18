@@ -1,0 +1,28 @@
+{
+  "levels": [
+    7,
+    8,
+    9,
+    10
+  ],
+  "g_min": 0.4,
+  "g_max": 1.0,
+  "num_g": 7,
+  "e_min": 0.0,
+  "e_max": 0.3,
+  "solver": "AUTO",
+  "solver_eps": 1e-07,
+  "solver_max_iters": 50000,
+  "margin_tolerance": 0.0003,
+  "eq_tolerance": 5e-06,
+  "psd_tolerance": 0.00012,
+  "bisection_steps": 6,
+  "upper_probe_points": 3,
+  "energy_floor_slack": 0.0,
+  "x2_energy_scan_points": 3,
+  "x2_edge_slack": 0.005,
+  "x2_lock_to_edge": true,
+  "use_completed_basis": true,
+  "basis": "canonical p^a x^b basis in original (x,p) variables",
+  "note": "small-g cubic ordinary bootstrap with RR full upper guide"
+}

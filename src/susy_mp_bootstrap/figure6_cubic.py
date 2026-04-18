@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
-from math import comb, exp, factorial
+from math import comb, exp, factorial, log
 from pathlib import Path
 from typing import Any
 import csv
@@ -132,6 +132,19 @@ def figure6_operator_basis_size(level: int = 10) -> int:
 
 def figure6_ground_basis_size(level: int = 10) -> int:
     return len(figure6_ground_basis(level))
+
+
+def figure6_eta_value(g: float, energy: float | None) -> float:
+    if energy is None or not np.isfinite(energy) or energy <= 0.0 or g <= 0.0:
+        return float("nan")
+    scale = figure5_instanton_energy_scale(g)
+    if scale <= 0.0 or not np.isfinite(scale):
+        return float("nan")
+    return float(log(energy / scale))
+
+
+def figure6_eta_array(g_values: np.ndarray, energies: np.ndarray) -> np.ndarray:
+    return np.array([figure6_eta_value(float(g), float(energy)) if np.isfinite(energy) else np.nan for g, energy in zip(g_values, energies, strict=True)], dtype=float)
 
 
 class Figure6CubicReducer(Figure5CubicReducer):
@@ -364,6 +377,18 @@ class Figure6EnergyPoint:
     status: str
     rr_upper: float
     moments: np.ndarray | None
+
+
+@dataclass
+class Figure6HierarchyLevelResult:
+    level: int
+    g_values: np.ndarray
+    lower: np.ndarray
+    upper: np.ndarray
+    lower_eta: np.ndarray
+    upper_eta: np.ndarray
+    lower_statuses: list[str]
+    upper_statuses: list[str]
 
 
 @lru_cache(maxsize=None)
@@ -925,6 +950,157 @@ def plot_figure6(
     pyplot.close(figure)
 
 
+def plot_figure6_eta(
+    g_values: np.ndarray,
+    lower_eta: np.ndarray,
+    upper_eta: np.ndarray,
+    *,
+    out_path: str | Path,
+    level: int,
+    xlim: tuple[float, float] = (0.0, 0.3),
+    ylim: tuple[float, float] = (-12.0, 12.0),
+) -> None:
+    plt = __import__("matplotlib")
+    plt.use("Agg")
+    import matplotlib.pyplot as pyplot
+
+    figure, axis = pyplot.subplots(figsize=(7.5, 5.2))
+    lower_mask = np.isfinite(lower_eta)
+    upper_mask = np.isfinite(upper_eta)
+    axis.plot(g_values[lower_mask], lower_eta[lower_mask], color="#1f78b4", linewidth=2.2, marker="o", markersize=4.2, label="lower")
+    axis.plot(g_values[upper_mask], upper_eta[upper_mask], color="#fdbf00", linewidth=2.2, marker="o", markersize=4.2, label="upper")
+    axis.set_xlim(*xlim)
+    axis.set_ylim(*ylim)
+    axis.set_xlabel(r"$g$")
+    axis.set_ylabel(r"$\ln(E/E_{\rm inst})$")
+    axis.set_title(f"Figure 6 level-{level} bounds in instanton units")
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=190)
+    pyplot.close(figure)
+
+
+def _figure6_level_color(level: int) -> str:
+    color_map = {
+        7: "#e31a1c",
+        8: "#6a3d9a",
+        9: "#1f78b4",
+        10: "#33a02c",
+    }
+    return color_map.get(level, "#444444")
+
+
+def plot_figure6_eta_hierarchy(
+    level_results: list[Figure6HierarchyLevelResult],
+    *,
+    out_path: str | Path,
+    xlim: tuple[float, float] = (0.0, 0.3),
+    ylim: tuple[float, float] = (-12.0, 12.0),
+) -> None:
+    plt = __import__("matplotlib")
+    plt.use("Agg")
+    import matplotlib.pyplot as pyplot
+
+    figure, axis = pyplot.subplots(figsize=(8.2, 5.8))
+    for result in level_results:
+        color = _figure6_level_color(result.level)
+        lower_mask = np.isfinite(result.lower_eta)
+        upper_mask = np.isfinite(result.upper_eta)
+        axis.plot(
+            result.g_values[lower_mask],
+            result.lower_eta[lower_mask],
+            color=color,
+            linewidth=2.1,
+            marker="o",
+            markersize=3.8,
+            label=f"L{result.level} lower",
+        )
+        axis.plot(
+            result.g_values[upper_mask],
+            result.upper_eta[upper_mask],
+            color=color,
+            linewidth=2.1,
+            linestyle="--",
+            marker="o",
+            markersize=3.8,
+            label=f"L{result.level} upper",
+        )
+    axis.set_xlim(*xlim)
+    axis.set_ylim(*ylim)
+    axis.set_xlabel(r"$g$")
+    axis.set_ylabel(r"$\ln(E/E_{\rm inst})$")
+    axis.set_title("Figure 6 hierarchy in instanton units")
+    axis.grid(True, alpha=0.25)
+    axis.legend(ncol=2, fontsize=9)
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=190)
+    pyplot.close(figure)
+
+
+def _write_figure6_outputs(
+    *,
+    output_dir: Path,
+    config: Figure6Config,
+    g_values: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    lower_statuses: list[str],
+    upper_statuses: list[str],
+    eta_ylim: tuple[float, float] = (-12.0, 12.0),
+) -> tuple[np.ndarray, np.ndarray]:
+    lower_eta = figure6_eta_array(g_values, lower)
+    upper_eta = figure6_eta_array(g_values, upper)
+
+    with (output_dir / "bounds.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["g", "lower", "lower_eta", "lower_status", "upper", "upper_eta", "upper_status"],
+        )
+        writer.writeheader()
+        for index, g in enumerate(g_values):
+            writer.writerow(
+                {
+                    "g": float(g),
+                    "lower": float(lower[index]) if np.isfinite(lower[index]) else np.nan,
+                    "lower_eta": float(lower_eta[index]) if np.isfinite(lower_eta[index]) else np.nan,
+                    "lower_status": lower_statuses[index],
+                    "upper": float(upper[index]) if np.isfinite(upper[index]) else np.nan,
+                    "upper_eta": float(upper_eta[index]) if np.isfinite(upper_eta[index]) else np.nan,
+                    "upper_status": upper_statuses[index],
+                }
+            )
+
+    plot_figure6(g_values, lower, upper, out_path=output_dir / "figure6_bounds.png", level=config.level)
+    plot_figure6_eta(
+        g_values,
+        lower_eta,
+        upper_eta,
+        out_path=output_dir / "figure6_bounds_eta.png",
+        level=config.level,
+        ylim=eta_ylim,
+    )
+
+    summary_lines = [
+        f"# Figure 6 level-{config.level} ground-state bounds",
+        "",
+        "- Model: cubic SUSY QM in original `(x,p)` variables.",
+        f"- Ordinary block: canonical compressed basis `{figure6_operator_basis_size(config.level)}x{figure6_operator_basis_size(config.level)}`.",
+        f"- Ground-state block: canonical compressed basis `{figure6_ground_basis_size(config.level)}x{figure6_ground_basis_size(config.level)}`.",
+        "- Small-g scan variable: `E = E_inst(g) exp(eta)`.",
+        "- Output also includes `eta = ln(E / E_inst)`.",
+        "- Pure moment recursion imposed as linear equalities; no `m_n/g^2` forward elimination.",
+        f"- Lower feasible points: `{int(np.isfinite(lower).sum())}/{len(g_values)}`",
+        f"- Upper feasible points: `{int(np.isfinite(upper).sum())}/{len(g_values)}`",
+    ]
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return lower_eta, upper_eta
+
+
 def run_figure6_scan(
     *,
     out_dir: str | Path,
@@ -936,40 +1112,94 @@ def run_figure6_scan(
     (output_dir / "config.json").write_text(json.dumps(resolved_config.to_json(), indent=2), encoding="utf-8")
 
     g_values, lower, upper, lower_statuses, upper_statuses = scan_figure6(resolved_config)
-    with (output_dir / "bounds.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["g", "lower", "lower_status", "upper", "upper_status"])
-        writer.writeheader()
-        for index, g in enumerate(g_values):
-            writer.writerow(
-                {
-                    "g": float(g),
-                    "lower": float(lower[index]) if np.isfinite(lower[index]) else np.nan,
-                    "lower_status": lower_statuses[index],
-                    "upper": float(upper[index]) if np.isfinite(upper[index]) else np.nan,
-                    "upper_status": upper_statuses[index],
-                }
-            )
-
-    plot_figure6(g_values, lower, upper, out_path=output_dir / "figure6_bounds.png", level=resolved_config.level)
-
-    summary_lines = [
-        f"# Figure 6 level-{resolved_config.level} ground-state bounds",
-        "",
-        "- Model: cubic SUSY QM in original `(x,p)` variables.",
-        f"- Ordinary block: canonical compressed basis `{figure6_operator_basis_size(resolved_config.level)}x{figure6_operator_basis_size(resolved_config.level)}`.",
-        f"- Ground-state block: canonical compressed basis `{figure6_ground_basis_size(resolved_config.level)}x{figure6_ground_basis_size(resolved_config.level)}`.",
-        "- Small-g scan variable: `E = E_inst(g) exp(eta)`.",
-        "- Pure moment recursion imposed as linear equalities; no `m_n/g^2` forward elimination.",
-        f"- Lower feasible points: `{int(np.isfinite(lower).sum())}/{len(g_values)}`",
-        f"- Upper feasible points: `{int(np.isfinite(upper).sum())}/{len(g_values)}`",
-    ]
-    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    lower_eta, upper_eta = _write_figure6_outputs(
+        output_dir=output_dir,
+        config=resolved_config,
+        g_values=g_values,
+        lower=lower,
+        upper=upper,
+        lower_statuses=lower_statuses,
+        upper_statuses=upper_statuses,
+    )
 
     return {
         "g_values": g_values,
         "lower": lower,
         "upper": upper,
+        "lower_eta": lower_eta,
+        "upper_eta": upper_eta,
         "lower_statuses": lower_statuses,
         "upper_statuses": upper_statuses,
         "out_dir": output_dir,
     }
+
+
+def run_figure6_hierarchy(
+    *,
+    out_dir: str | Path,
+    base_config: Figure6Config,
+    levels: tuple[int, ...] = (7, 8, 9, 10),
+    eta_ylim: tuple[float, float] = (-12.0, 12.0),
+) -> dict[int, Figure6HierarchyLevelResult]:
+    output_dir = Path(out_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    level_results: list[Figure6HierarchyLevelResult] = []
+    results_by_level: dict[int, Figure6HierarchyLevelResult] = {}
+    prior_result: Figure6HierarchyLevelResult | None = None
+
+    for level in levels:
+        config = replace(base_config, level=level)
+        level_dir = output_dir / f"level_{level}"
+        level_dir.mkdir(parents=True, exist_ok=True)
+        (level_dir / "config.json").write_text(json.dumps(config.to_json(), indent=2), encoding="utf-8")
+
+        if prior_result is None:
+            g_values, lower, upper, lower_statuses, upper_statuses = scan_figure6(config)
+        else:
+            g_values, lower, upper, lower_statuses, upper_statuses = scan_figure6_from_prior(
+                config,
+                prior_g_values=prior_result.g_values,
+                prior_lower=prior_result.lower,
+                prior_upper=prior_result.upper,
+            )
+
+        lower_eta, upper_eta = _write_figure6_outputs(
+            output_dir=level_dir,
+            config=config,
+            g_values=g_values,
+            lower=lower,
+            upper=upper,
+            lower_statuses=lower_statuses,
+            upper_statuses=upper_statuses,
+            eta_ylim=eta_ylim,
+        )
+        result = Figure6HierarchyLevelResult(
+            level=level,
+            g_values=g_values,
+            lower=lower,
+            upper=upper,
+            lower_eta=lower_eta,
+            upper_eta=upper_eta,
+            lower_statuses=lower_statuses,
+            upper_statuses=upper_statuses,
+        )
+        level_results.append(result)
+        results_by_level[level] = result
+        prior_result = result
+
+    plot_figure6_eta_hierarchy(level_results, out_path=output_dir / "figure6_hierarchy_eta.png", ylim=eta_ylim)
+
+    summary_lines = [
+        "# Figure 6 hierarchy in instanton units",
+        "",
+        "- Vertical variable: `eta = ln(E / E_inst)`.",
+        "- Levels scanned hierarchically: `" + ", ".join(str(level) for level in levels) + "`.",
+        "- Level `L+1` uses level `L` lower/upper windows to shrink the scan domain.",
+    ]
+    for result in level_results:
+        summary_lines.append(
+            f"- Level {result.level}: lower `{int(np.isfinite(result.lower).sum())}/{len(result.g_values)}`, upper `{int(np.isfinite(result.upper).sum())}/{len(result.g_values)}`."
+        )
+    (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return results_by_level

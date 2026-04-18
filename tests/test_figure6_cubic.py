@@ -6,6 +6,7 @@ from susy_mp_bootstrap.figure6_cubic import (
     Figure6CubicReducer,
     figure6_ground_basis,
     figure6_ground_basis_size,
+    figure6_eta_value,
     figure6_operator_basis,
     figure6_operator_basis_size,
 )
@@ -30,3 +31,12 @@ def test_figure6_ground_entry_matches_simple_commutator_example() -> None:
     reducer = Figure6CubicReducer(g=0.5, energy=0.05)
     # <x [H, x]> = -i <x p> = 1/2 in an energy eigenstate.
     assert reducer.ground_entry_expr((0, 1), (0, 1)) == pytest.approx({0: 0.5 + 0.0j})
+
+
+def test_figure6_eta_value_uses_instanton_units() -> None:
+    from math import exp, log, pi
+
+    g = 0.2
+    instanton = (1.0 / (2.0 * pi)) * exp(-1.0 / (3.0 * g * g))
+    assert figure6_eta_value(g, instanton) == pytest.approx(0.0)
+    assert figure6_eta_value(g, instanton * exp(2.5)) == pytest.approx(2.5)

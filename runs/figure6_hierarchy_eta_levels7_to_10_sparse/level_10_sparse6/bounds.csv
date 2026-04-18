@@ -1,0 +1,7 @@
+g,lower,lower_eta,lower_status,upper,upper_eta,upper_status
+0.0,0.0,nan,exact:g0,0.0,nan,exact:g0
+0.025,1.7185082875523488e-237,-10.0,scs:optimal_inaccurate:feas,8.337604091436793e-229,10.0,scs:optimal_inaccurate:feas
+0.06,4.43019950806762e-46,-10.0,scs:optimal_inaccurate:feas,2.1493786100359835e-37,10.0,scs:optimal_inaccurate:feas
+0.12,6.393847969812516e-16,-10.0,scs:optimal_inaccurate:feas,1.3907985874084261e-11,-0.0125327028943247,scs:optimal_inaccurate:feas
+0.18,2.4593768870449333e-10,-10.0,scs:optimal:feas,5.254973590496093e-06,-0.03039266921265993,scs:optimal_inaccurate:feas
+0.3,0.00013221213202252896,-3.3895220944284654,scs:optimal_inaccurate:feas,0.00019308547955373717,-3.0107967977550967,scs:optimal_inaccurate:feas

@@ -1,0 +1,148 @@
+
+\providecommand{\href}[2]{#2}\begingroup\raggedright\begin{thebibliography}{10}
+
+\bibitem{deWit:1988wri}
+B.~de~Wit, J.~Hoppe and H.~Nicolai, \emph{{On the Quantum Mechanics of Supermembranes}}, \href{https://doi.org/10.1201/9781482268737-11}{\emph{Nucl. Phys. B} {\bfseries 305} (1988) 545}.
+
+\bibitem{Banks:1996vh}
+T.~Banks, W.~Fischler, S.~H. Shenker and L.~Susskind, \emph{{M theory as a matrix model: A conjecture}}, \href{https://doi.org/10.1201/9781482268737-37}{\emph{Phys. Rev. D} {\bfseries 55} (1997) 5112} [\href{https://arxiv.org/abs/hep-th/9610043}{{\ttfamily hep-th/9610043}}].
+
+\bibitem{Itzhaki:1998dd}
+N.~Itzhaki, J.~M. Maldacena, J.~Sonnenschein and S.~Yankielowicz, \emph{{Supergravity and the large N limit of theories with sixteen supercharges}}, \href{https://doi.org/10.1103/PhysRevD.58.046004}{\emph{Phys. Rev. D} {\bfseries 58} (1998) 046004} [\href{https://arxiv.org/abs/hep-th/9802042}{{\ttfamily hep-th/9802042}}].
+
+\bibitem{Maldacena:2023acv}
+J.~Maldacena, \emph{{A simple quantum system that describes a black hole}},  \href{https://arxiv.org/abs/2303.11534}{{\ttfamily 2303.11534}}.
+
+\bibitem{Kabat:2000zv}
+D.~N. Kabat, G.~Lifschytz and D.~A. Lowe, \emph{{Black hole thermodynamics from calculations in strongly coupled gauge theory}}, \href{https://doi.org/10.1103/PhysRevLett.86.1426}{\emph{Int. J. Mod. Phys. A} {\bfseries 16} (2001) 856} [\href{https://arxiv.org/abs/hep-th/0007051}{{\ttfamily hep-th/0007051}}].
+
+\bibitem{Anagnostopoulos:2007fw}
+K.~N. Anagnostopoulos, M.~Hanada, J.~Nishimura and S.~Takeuchi, \emph{{Monte Carlo studies of supersymmetric matrix quantum mechanics with sixteen supercharges at finite temperature}}, \href{https://doi.org/10.1103/PhysRevLett.100.021601}{\emph{Phys. Rev. Lett.} {\bfseries 100} (2008) 021601} [\href{https://arxiv.org/abs/0707.4454}{{\ttfamily 0707.4454}}].
+
+\bibitem{Hanada:2008ez}
+M.~Hanada, Y.~Hyakutake, J.~Nishimura and S.~Takeuchi, \emph{{Higher derivative corrections to black hole thermodynamics from supersymmetric matrix quantum mechanics}}, \href{https://doi.org/10.1103/PhysRevLett.102.191602}{\emph{Phys. Rev. Lett.} {\bfseries 102} (2009) 191602} [\href{https://arxiv.org/abs/0811.3102}{{\ttfamily 0811.3102}}].
+
+\bibitem{Catterall:2008yz}
+S.~Catterall and T.~Wiseman, \emph{{Black hole thermodynamics from simulations of lattice Yang-Mills theory}}, \href{https://doi.org/10.1103/PhysRevD.78.041502}{\emph{Phys. Rev. D} {\bfseries 78} (2008) 041502} [\href{https://arxiv.org/abs/0803.4273}{{\ttfamily 0803.4273}}].
+
+\bibitem{Filev:2015hia}
+V.~G. Filev and D.~O'Connor, \emph{{The BFSS model on the lattice}}, \href{https://doi.org/10.1007/JHEP05(2016)167}{\emph{JHEP} {\bfseries 05} (2016) 167} [\href{https://arxiv.org/abs/1506.01366}{{\ttfamily 1506.01366}}].
+
+\bibitem{Kadoh:2015mka}
+D.~Kadoh and S.~Kamata, \emph{{Gauge/gravity duality and lattice simulations of one dimensional SYM with sixteen supercharges}},  \href{https://arxiv.org/abs/1503.08499}{{\ttfamily 1503.08499}}.
+
+\bibitem{Berkowitz:2016jlq}
+E.~Berkowitz, E.~Rinaldi, M.~Hanada, G.~Ishiki, S.~Shimasaki and P.~Vranas, \emph{{Precision lattice test of the gauge/gravity duality at large-$N$}}, \href{https://doi.org/10.1103/PhysRevD.94.094501}{\emph{Phys. Rev. D} {\bfseries 94} (2016) 094501} [\href{https://arxiv.org/abs/1606.04951}{{\ttfamily 1606.04951}}].
+
+\bibitem{Berkowitz:2018qhn}
+E.~Berkowitz, M.~Hanada, E.~Rinaldi and P.~Vranas, \emph{{Gauged And Ungauged: A Nonperturbative Test}}, \href{https://doi.org/10.1007/JHEP06(2018)124}{\emph{JHEP} {\bfseries 06} (2018) 124} [\href{https://arxiv.org/abs/1802.02985}{{\ttfamily 1802.02985}}].
+
+\bibitem{Pateloudis:2022ijr}
+{\scshape Monte Carlo String/M-theory (MCSMC)} collaboration, \emph{{Precision test of gauge/gravity duality in D0-brane matrix model at low temperature}}, \href{https://doi.org/10.1007/JHEP03(2023)071}{\emph{JHEP} {\bfseries 03} (2023) 071} [\href{https://arxiv.org/abs/2210.04881}{{\ttfamily 2210.04881}}].
+
+\bibitem{Catterall:2009xn}
+S.~Catterall and T.~Wiseman, \emph{{Extracting black hole physics from the lattice}}, \href{https://doi.org/10.1007/JHEP04(2010)077}{\emph{JHEP} {\bfseries 04} (2010) 077} [\href{https://arxiv.org/abs/0909.4947}{{\ttfamily 0909.4947}}].
+
+\bibitem{Anderson:2016rcw}
+P.~D. Anderson and M.~Kruczenski, \emph{{Loop Equations and bootstrap methods in the lattice}}, \href{https://doi.org/10.1016/j.nuclphysb.2017.06.009}{\emph{Nucl. Phys. B} {\bfseries 921} (2017) 702} [\href{https://arxiv.org/abs/1612.08140}{{\ttfamily 1612.08140}}].
+
+\bibitem{Lin:2020mme}
+H.~W. Lin, \emph{{Bootstraps to strings: solving random matrix models with positivity}}, \href{https://doi.org/10.1007/JHEP06(2020)090}{\emph{JHEP} {\bfseries 06} (2020) 090} [\href{https://arxiv.org/abs/2002.08387}{{\ttfamily 2002.08387}}].
+
+\bibitem{Han:2020bkb}
+X.~Han, S.~A. Hartnoll and J.~Kruthoff, \emph{{Bootstrapping Matrix Quantum Mechanics}}, \href{https://doi.org/10.1103/PhysRevLett.125.041601}{\emph{Phys. Rev. Lett.} {\bfseries 125} (2020) 041601} [\href{https://arxiv.org/abs/2004.10212}{{\ttfamily 2004.10212}}].
+
+\bibitem{Kazakov:2021lel}
+V.~Kazakov and Z.~Zheng, \emph{{Analytic and numerical bootstrap for one-matrix model and \textquotedblleft{}unsolvable\textquotedblright{} two-matrix model}}, \href{https://doi.org/10.1007/JHEP06(2022)030}{\emph{JHEP} {\bfseries 06} (2022) 030} [\href{https://arxiv.org/abs/2108.04830}{{\ttfamily 2108.04830}}].
+
+\bibitem{Kazakov:2022xuh}
+V.~Kazakov and Z.~Zheng, \emph{{Bootstrap for lattice Yang-Mills theory}}, \href{https://doi.org/10.1103/PhysRevD.107.L051501}{\emph{Phys. Rev. D} {\bfseries 107} (2023) L051501} [\href{https://arxiv.org/abs/2203.11360}{{\ttfamily 2203.11360}}].
+
+\bibitem{Cho:2022lcj}
+M.~Cho, B.~Gabai, Y.-H. Lin, V.~A. Rodriguez, J.~Sandor and X.~Yin, \emph{{Bootstrapping the Ising Model on the Lattice}},  \href{https://arxiv.org/abs/2206.12538}{{\ttfamily 2206.12538}}.
+
+\bibitem{Lin:2023owt}
+H.~W. Lin, \emph{{Bootstrap bounds on D0-brane quantum mechanics}}, \href{https://doi.org/10.1007/JHEP06(2023)038}{\emph{JHEP} {\bfseries 06} (2023) 038} [\href{https://arxiv.org/abs/2302.04416}{{\ttfamily 2302.04416}}].
+
+\bibitem{Kazakov:2024ool}
+V.~Kazakov and Z.~Zheng, \emph{{Bootstrap for Finite N Lattice Yang-Mills Theory}},  \href{https://arxiv.org/abs/2404.16925}{{\ttfamily 2404.16925}}.
+
+\bibitem{Li:2024wrd}
+Z.~Li and S.~Zhou, \emph{{Bootstrapping the Abelian lattice gauge theories}}, \href{https://doi.org/10.1007/JHEP08(2024)154}{\emph{JHEP} {\bfseries 08} (2024) 154} [\href{https://arxiv.org/abs/2404.17071}{{\ttfamily 2404.17071}}].
+
+\bibitem{Polchinski:1999br}
+J.~Polchinski, \emph{{M theory and the light cone}}, \href{https://doi.org/10.1143/PTPS.134.158}{\emph{Prog. Theor. Phys. Suppl.} {\bfseries 134} (1999) 158} [\href{https://arxiv.org/abs/hep-th/9903165}{{\ttfamily hep-th/9903165}}].
+
+\bibitem{LinZheng2}
+H.~Lin and Z.~Zheng, \emph{Bootstrapping bfss, part ii}, {\emph{in prep} (2024) }.
+
+\bibitem{Yi:1997eg}
+P.~Yi, \emph{{Witten index and threshold bound states of D-branes}}, \href{https://doi.org/10.1016/S0550-3213(97)00486-0}{\emph{Nucl. Phys. B} {\bfseries 505} (1997) 307} [\href{https://arxiv.org/abs/hep-th/9704098}{{\ttfamily hep-th/9704098}}].
+
+\bibitem{Moore:1998et}
+G.~W. Moore, N.~Nekrasov and S.~Shatashvili, \emph{{D particle bound states and generalized instantons}}, \href{https://doi.org/10.1007/s002200050016}{\emph{Commun. Math. Phys.} {\bfseries 209} (2000) 77} [\href{https://arxiv.org/abs/hep-th/9803265}{{\ttfamily hep-th/9803265}}].
+
+\bibitem{Konechny:1998vc}
+A.~Konechny, \emph{{On asymptotic Hamiltonian for SU(N) matrix theory}}, \href{https://doi.org/10.1088/1126-6708/1998/10/018}{\emph{JHEP} {\bfseries 10} (1998) 018} [\href{https://arxiv.org/abs/hep-th/9805046}{{\ttfamily hep-th/9805046}}].
+
+\bibitem{Porrati:1997ej}
+M.~Porrati and A.~Rozenberg, \emph{{Bound states at threshold in supersymmetric quantum mechanics}}, \href{https://doi.org/10.1016/S0550-3213(97)00804-3}{\emph{Nucl. Phys. B} {\bfseries 515} (1998) 184} [\href{https://arxiv.org/abs/hep-th/9708119}{{\ttfamily hep-th/9708119}}].
+
+\bibitem{Sethi:2000zf}
+S.~Sethi and M.~Stern, \emph{{Invariance theorems for supersymmetric Yang-Mills theories}}, \href{https://doi.org/10.4310/ATMP.2000.v4.n2.a8}{\emph{Adv. Theor. Math. Phys.} {\bfseries 4} (2000) 487} [\href{https://arxiv.org/abs/hep-th/0001189}{{\ttfamily hep-th/0001189}}].
+
+\bibitem{Gran:2001yh}
+U.~Gran, \emph{{GAMMA: A Mathematica package for performing gamma matrix algebra and Fierz transformations in arbitrary dimensions}},  \href{https://arxiv.org/abs/hep-th/0105086}{{\ttfamily hep-th/0105086}}.
+
+\bibitem{Feger:2019tvk}
+R.~Feger, T.~W. Kephart and R.~J. Saskowski, \emph{{LieART 2.0 \textendash{} A Mathematica application for Lie Algebras and Representation Theory}}, \href{https://doi.org/10.1016/j.cpc.2020.107490}{\emph{Comput. Phys. Commun.} {\bfseries 257} (2020) 107490} [\href{https://arxiv.org/abs/1912.10969}{{\ttfamily 1912.10969}}].
+
+\bibitem{Maldacena:2018vsr}
+J.~Maldacena and A.~Milekhin, \emph{{To gauge or not to gauge?}}, \href{https://doi.org/10.1007/JHEP04(2018)084}{\emph{JHEP} {\bfseries 04} (2018) 084} [\href{https://arxiv.org/abs/1802.00428}{{\ttfamily 1802.00428}}].
+
+\bibitem{Plefka:1997xq}
+J.~Plefka and A.~Waldron, \emph{{On the quantum mechanics of M(atrix) theory}}, \href{https://doi.org/10.1016/S0550-3213(97)00762-1}{\emph{Nucl. Phys. B} {\bfseries 512} (1998) 460} [\href{https://arxiv.org/abs/hep-th/9710104}{{\ttfamily hep-th/9710104}}].
+
+\bibitem{Frohlich:1999zf}
+J.~Frohlich, G.~M. Graf, D.~Hasler, J.~Hoppe and S.-T. Yau, \emph{{Asymptotic form of zero energy wave functions in supersymmetric matrix models}}, \href{https://doi.org/10.1016/S0550-3213(99)00649-5}{\emph{Nucl. Phys. B} {\bfseries 567} (2000) 231} [\href{https://arxiv.org/abs/hep-th/9904182}{{\ttfamily hep-th/9904182}}].
+
+\bibitem{Hoppe:2000tj}
+J.~Hoppe and J.~Plefka, \emph{{The Asymptotic ground state of SU(3) matrix theory}},  \href{https://arxiv.org/abs/hep-th/0002107}{{\ttfamily hep-th/0002107}}.
+
+\bibitem{Hasler:2002wt}
+D.~Hasler and J.~Hoppe, \emph{{Asymptotic factorization of the ground state for SU(N) invariant supersymmetric matrix models}},  \href{https://arxiv.org/abs/hep-th/0206043}{{\ttfamily hep-th/0206043}}.
+
+\bibitem{Lin:2014wka}
+Y.-H. Lin and X.~Yin, \emph{{On the Ground State Wave Function of Matrix Theory}}, \href{https://doi.org/10.1007/JHEP11(2015)027}{\emph{JHEP} {\bfseries 11} (2015) 027} [\href{https://arxiv.org/abs/1402.0055}{{\ttfamily 1402.0055}}].
+
+\bibitem{Berenstein:2002jq}
+D.~E. Berenstein, J.~M. Maldacena and H.~S. Nastase, \emph{{Strings in flat space and pp waves from N=4 superYang-Mills}}, \href{https://doi.org/10.1088/1126-6708/2002/04/013}{\emph{JHEP} {\bfseries 04} (2002) 013} [\href{https://arxiv.org/abs/hep-th/0202021}{{\ttfamily hep-th/0202021}}].
+
+\bibitem{Hanada:2021ipb}
+M.~Hanada, \emph{{Bulk geometry in gauge/gravity duality and color degrees of freedom}}, \href{https://doi.org/10.1103/PhysRevD.103.106007}{\emph{Phys. Rev. D} {\bfseries 103} (2021) 106007} [\href{https://arxiv.org/abs/2102.08982}{{\ttfamily 2102.08982}}].
+
+\bibitem{Fawzi:2023fpg}
+H.~Fawzi, O.~Fawzi and S.~O. Scalet, \emph{{Certified algorithms for equilibrium states of local quantum Hamiltonians}}, \href{https://doi.org/10.1038/s41467-024-51592-3}{\emph{Nature Commun.} {\bfseries 15} (2024) 7394} [\href{https://arxiv.org/abs/2311.18706}{{\ttfamily 2311.18706}}].
+
+\bibitem{Cho:2024kxn}
+M.~Cho, B.~Gabai, J.~Sandor and X.~Yin, \emph{{Thermal Bootstrap of Matrix Quantum Mechanics}},  \href{https://arxiv.org/abs/2410.04262}{{\ttfamily 2410.04262}}.
+
+\bibitem{deWit:1988xki}
+B.~de~Wit, M.~Luscher and H.~Nicolai, \emph{{The Supermembrane Is Unstable}}, \href{https://doi.org/10.1016/0550-3213(89)90214-9}{\emph{Nucl. Phys. B} {\bfseries 320} (1989) 135}.
+
+\bibitem{Balthazar:2016utu}
+B.~Balthazar, V.~A. Rodriguez and X.~Yin, \emph{{Hamiltonian Truncation Study of Supersymmetric Quantum Mechanics: S-Matrix and Metastable States}}, \href{https://doi.org/10.1007/JHEP08(2019)100}{\emph{JHEP} {\bfseries 08} (2019) 100} [\href{https://arxiv.org/abs/1610.07275}{{\ttfamily 1610.07275}}].
+
+\bibitem{Komatsu:2024vnb}
+S.~Komatsu, A.~Martina, J.~a. Penedones, N.~Suchel, A.~Vuignier and X.~Zhao, \emph{{Gravity from quantum mechanics of finite matrices}},  \href{https://arxiv.org/abs/2401.16471}{{\ttfamily 2401.16471}}.
+
+\bibitem{Hoppe1980}
+J.~Hoppe, \emph{Two problems in quantum mechanics},  Master's thesis, Massachusetts Institute of Technology, 1980.
+
+\bibitem{Simon:1983jy}
+B.~Simon, \emph{{SOME QUANTUM OPERATORS WITH DISCRETE SPECTRUM BUT CLASSICALLY CONTINUOUS SPECTRUM}}, \href{https://doi.org/10.1016/0003-4916(83)90057-X}{\emph{Annals Phys.} {\bfseries 146} (1983) 209}.
+
+\bibitem{Freedman:2012zz}
+D.~Z. Freedman and A.~Van~Proeyen, \emph{{Supergravity}}. Cambridge Univ. Press, Cambridge, UK, 5, 2012, \href{https://doi.org/10.1017/CBO9781139026833}{10.1017/CBO9781139026833}.
+
+\end{thebibliography}\endgroup

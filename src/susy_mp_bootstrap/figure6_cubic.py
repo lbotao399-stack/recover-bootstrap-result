@@ -1042,6 +1042,55 @@ def plot_figure6_eta_hierarchy(
     pyplot.close(figure)
 
 
+def plot_figure6_hierarchy(
+    level_results: list[Figure6HierarchyLevelResult],
+    *,
+    out_path: str | Path,
+    xlim: tuple[float, float] = (0.0, 0.3),
+    ylim: tuple[float, float] = (0.0, 2.0),
+) -> None:
+    plt = __import__("matplotlib")
+    plt.use("Agg")
+    import matplotlib.pyplot as pyplot
+
+    figure, axis = pyplot.subplots(figsize=(8.2, 5.8))
+    for result in level_results:
+        color = _figure6_level_color(result.level)
+        lower_mask = np.isfinite(result.lower)
+        upper_mask = np.isfinite(result.upper)
+        axis.plot(
+            result.g_values[lower_mask],
+            result.lower[lower_mask],
+            color=color,
+            linewidth=2.1,
+            marker="o",
+            markersize=3.8,
+            label=f"L{result.level} lower",
+        )
+        axis.plot(
+            result.g_values[upper_mask],
+            result.upper[upper_mask],
+            color=color,
+            linewidth=2.1,
+            linestyle="--",
+            marker="o",
+            markersize=3.8,
+            label=f"L{result.level} upper",
+        )
+    axis.set_xlim(*xlim)
+    axis.set_ylim(*ylim)
+    axis.set_xlabel(r"$g$")
+    axis.set_ylabel(r"$E$")
+    axis.set_title("Figure 6 hierarchy in original energy units")
+    axis.grid(True, alpha=0.25)
+    axis.legend(ncol=2, fontsize=9)
+    figure.tight_layout()
+    output_path = Path(out_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=190)
+    pyplot.close(figure)
+
+
 def _write_figure6_outputs(
     *,
     output_dir: Path,
@@ -1188,11 +1237,13 @@ def run_figure6_hierarchy(
         results_by_level[level] = result
         prior_result = result
 
+    plot_figure6_hierarchy(level_results, out_path=output_dir / "figure6_hierarchy.png")
     plot_figure6_eta_hierarchy(level_results, out_path=output_dir / "figure6_hierarchy_eta.png", ylim=eta_ylim)
 
     summary_lines = [
-        "# Figure 6 hierarchy in instanton units",
+        "# Figure 6 hierarchy",
         "",
+        "- Main hierarchy plot uses the original energy coordinate `E`.",
         "- Vertical variable: `eta = ln(E / E_inst)`.",
         "- Levels scanned hierarchically: `" + ", ".join(str(level) for level in levels) + "`.",
         "- Level `L+1` uses level `L` lower/upper windows to shrink the scan domain.",

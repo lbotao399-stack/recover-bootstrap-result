@@ -1,6 +1,7 @@
-# Figure 6 sparse hierarchy in instanton units
+# Figure 6 hierarchy
 
-- Vertical variable: `eta = ln(E / E_inst)`.
+- Main hierarchy plot uses the original energy coordinate `E`.
+- Auxiliary hierarchy plot keeps `eta = ln(E / E_inst)`.
 - Level 7 reuses the earlier 12-point seed scan.
 - Levels 8-9 use a 9-point sparse grid inherited from the previous level.
 - Level 10 uses a 6-point subset inherited from level 9.

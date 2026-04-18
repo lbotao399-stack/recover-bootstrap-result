@@ -654,25 +654,102 @@ def _plot_figure8(
     plt.use("Agg")
     import matplotlib.pyplot as pyplot
 
-    figure, axes = pyplot.subplots(1, 2, figsize=(10.8, 4.8))
+    figure, axes = pyplot.subplots(
+        2,
+        2,
+        figsize=(11.2, 6.6),
+        gridspec_kw={"height_ratios": [4.0, 1.35], "hspace": 0.08, "wspace": 0.18},
+        sharex="col",
+        constrained_layout=True,
+    )
 
-    axes[0].plot(n_values, x2_exact, color="black", linewidth=1.8, label="exact")
-    axes[0].plot(n_values, x2_lower, color="#1f78b4", marker="o", linewidth=2.1, label="lower bound")
-    axes[0].set_xlabel(r"$N$")
-    axes[0].set_ylabel(r"$\langle \mathrm{tr}\, X^2 \rangle$")
-    axes[0].set_title("Figure 8: $\\langle \\mathrm{tr} X^2 \\rangle$")
-    axes[0].grid(True, alpha=0.25)
-    axes[0].legend()
+    x2_gap = x2_exact - x2_lower
+    x4_gap = x4_exact - x4_lower
+    offset = 0.065
 
-    axes[1].plot(n_values, x4_exact, color="black", linewidth=1.8, label="exact")
-    axes[1].plot(n_values, x4_lower, color="#1f78b4", marker="o", linewidth=2.1, label="lower bound")
-    axes[1].set_xlabel(r"$N$")
-    axes[1].set_ylabel(r"$\langle \mathrm{tr}\, X^4 \rangle$")
-    axes[1].set_title("Figure 8: $\\langle \\mathrm{tr} X^4 \\rangle$")
-    axes[1].grid(True, alpha=0.25)
-    axes[1].legend()
+    top_left, top_right = axes[0]
+    bottom_left, bottom_right = axes[1]
 
-    figure.tight_layout()
+    top_left.plot(
+        n_values,
+        x2_exact,
+        color="black",
+        linewidth=2.0,
+        linestyle="--",
+        label="exact",
+        zorder=2,
+    )
+    top_left.plot(
+        n_values + offset,
+        x2_lower,
+        color="#1f78b4",
+        marker="o",
+        markersize=6.5,
+        markerfacecolor="white",
+        markeredgewidth=1.8,
+        linewidth=1.8,
+        label="lower bound",
+        zorder=3,
+    )
+    top_left.set_ylabel(r"$\langle \mathrm{tr}\, X^2 \rangle$")
+    top_left.set_title("Figure 8: $\\langle \\mathrm{tr} X^2 \\rangle$")
+    top_left.grid(True, alpha=0.25)
+    top_left.legend()
+
+    top_right.plot(
+        n_values,
+        x4_exact,
+        color="black",
+        linewidth=2.0,
+        linestyle="--",
+        label="exact",
+        zorder=2,
+    )
+    top_right.plot(
+        n_values + offset,
+        x4_lower,
+        color="#1f78b4",
+        marker="o",
+        markersize=6.5,
+        markerfacecolor="white",
+        markeredgewidth=1.8,
+        linewidth=1.8,
+        label="lower bound",
+        zorder=3,
+    )
+    top_right.set_ylabel(r"$\langle \mathrm{tr}\, X^4 \rangle$")
+    top_right.set_title("Figure 8: $\\langle \\mathrm{tr} X^4 \\rangle$")
+    top_right.grid(True, alpha=0.25)
+    top_right.legend()
+
+    bottom_left.axhline(0.0, color="black", linewidth=1.0, alpha=0.7)
+    bottom_left.plot(
+        n_values + offset,
+        x2_gap,
+        color="#1f78b4",
+        marker="o",
+        markersize=4.8,
+        linewidth=1.3,
+    )
+    bottom_left.set_xlabel(r"$N$")
+    bottom_left.set_ylabel("exact - bound")
+    bottom_left.grid(True, alpha=0.25)
+    bottom_left.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+
+    bottom_right.axhline(0.0, color="black", linewidth=1.0, alpha=0.7)
+    bottom_right.plot(
+        n_values + offset,
+        x4_gap,
+        color="#1f78b4",
+        marker="o",
+        markersize=4.8,
+        linewidth=1.3,
+    )
+    bottom_right.set_xlabel(r"$N$")
+    bottom_right.set_ylabel("exact - bound")
+    bottom_right.grid(True, alpha=0.25)
+    bottom_right.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+
     output_path = Path(out_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output_path, dpi=190)

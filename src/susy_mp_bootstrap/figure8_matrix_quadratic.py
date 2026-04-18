@@ -52,6 +52,10 @@ def _expr_imag(expr: LinearExpr, variables) -> Any:
     return result
 
 
+def _single_var_expr(index: int, coefficient: complex = 1.0) -> LinearExpr:
+    return {index: coefficient}
+
+
 def _build_real_psd_expression(cp, matrix_exprs: list[list[LinearExpr]], variables) -> Any:
     size = len(matrix_exprs)
     re_matrix = [[0 for _ in range(size)] for _ in range(size)]
@@ -368,6 +372,71 @@ def _max_psd_residual(matrix_values: list[np.ndarray | None]) -> float | None:
     return max(residuals, default=0.0)
 
 
+def _quartic_bosonic_targets(
+    reducer: Figure8QuadraticReducer,
+    *,
+    dxx_expr: LinearExpr,
+) -> dict[RawWord, LinearExpr]:
+    x2_expr = reducer.moment_expr((X, X))
+    x4_expr = reducer.moment_expr((X, X, X, X))
+    nx2 = {}
+    _expr_add_scaled(nx2, x2_expr, float(reducer.n))
+    half_dxx = {}
+    _expr_add_scaled(half_dxx, dxx_expr, 0.5)
+
+    nx2_plus_half_dxx: LinearExpr = {}
+    _expr_add_scaled(nx2_plus_half_dxx, nx2, 1.0)
+    _expr_add_scaled(nx2_plus_half_dxx, half_dxx, 1.0)
+
+    x4_minus_nx2_minus_dxx: LinearExpr = {}
+    _expr_add_scaled(x4_minus_nx2_minus_dxx, x4_expr, 1.0)
+    _expr_add_scaled(x4_minus_nx2_minus_dxx, x2_expr, -float(reducer.n))
+    _expr_add_scaled(x4_minus_nx2_minus_dxx, dxx_expr, -1.0)
+
+    targets: dict[RawWord, LinearExpr] = {}
+    targets[(X, X, X, X)] = x4_expr
+
+    expr: LinearExpr = {}
+    _expr_add_scaled(expr, nx2_plus_half_dxx, 1.0j)
+    targets[(X, X, X, P)] = expr
+    expr = {}
+    _expr_add_scaled(expr, nx2_plus_half_dxx, -1.0j)
+    targets[(P, X, X, X)] = expr
+
+    expr = {}
+    _expr_add_scaled(expr, dxx_expr, 0.5j)
+    targets[(X, X, P, X)] = expr
+    expr = {}
+    _expr_add_scaled(expr, dxx_expr, -0.5j)
+    targets[(X, P, X, X)] = expr
+
+    targets[(X, X, P, P)] = x4_minus_nx2_minus_dxx
+    targets[(P, P, X, X)] = x4_minus_nx2_minus_dxx
+
+    expr = {}
+    _expr_add_scaled(expr, dxx_expr, 0.5)
+    targets[(X, P, X, P)] = expr
+    targets[(P, X, P, X)] = expr
+
+    targets[(X, P, P, X)] = x4_expr
+    targets[(P, X, X, P)] = x4_expr
+
+    expr = {}
+    _expr_add_scaled(expr, x4_expr, 1.0j)
+    targets[(X, P, P, P)] = expr
+    expr = {}
+    _expr_add_scaled(expr, dxx_expr, 0.5j)
+    targets[(P, X, P, P)] = expr
+    expr = {}
+    _expr_add_scaled(expr, x4_minus_nx2_minus_dxx, 1.0j)
+    targets[(P, P, X, P)] = expr
+    expr = {}
+    _expr_add_scaled(expr, x4_expr, -1.0j)
+    targets[(P, P, P, X)] = expr
+    targets[(P, P, P, P)] = x4_expr
+    return targets
+
+
 def solve_figure8_bound(
     *,
     n: int,
@@ -383,7 +452,9 @@ def solve_figure8_bound(
 ) -> Figure8SolveResult:
     cp = _import_cvxpy()
     reducer = Figure8QuadraticReducer(n=n, a=a, max_length=closure_length)
-    variables = cp.Variable(len(reducer.words) - 1)
+    dxx_index = len(reducer.words)
+    variables = cp.Variable(len(reducer.words))
+    dxx_expr = _single_var_expr(dxx_index)
 
     constraints = []
     for word in reducer.words:
@@ -429,6 +500,43 @@ def solve_figure8_bound(
         constraints.append(_expr_real(expr, variables) == 0.0)
         constraints.append(_expr_imag(expr, variables) == 0.0)
 
+    # Minimal split sector for Figure 8 quartic closure.
+    expr = reducer.moment_expr((X,))
+    constraints.append(_expr_real(expr, variables) == 0.0)
+    constraints.append(_expr_imag(expr, variables) == 0.0)
+    expr = reducer.moment_expr((P,))
+    constraints.append(_expr_real(expr, variables) == 0.0)
+    constraints.append(_expr_imag(expr, variables) == 0.0)
+
+    x2_expr = reducer.moment_expr((X, X))
+    x4_expr = reducer.moment_expr((X, X, X, X))
+    expr = {}
+    _expr_add_scaled(expr, x2_expr, 2.0 * reducer.a)
+    _expr_add_scaled(expr, {0: -float(reducer.n**2)}, 1.0)
+    constraints.append(_expr_real(expr, variables) == 0.0)
+    constraints.append(_expr_imag(expr, variables) == 0.0)
+
+    expr = {}
+    _expr_add_scaled(expr, dxx_expr, 2.0 * reducer.a)
+    _expr_add_scaled(expr, {0: -float(reducer.n)}, 1.0)
+    constraints.append(_expr_real(expr, variables) == 0.0)
+    constraints.append(_expr_imag(expr, variables) == 0.0)
+
+    expr = {}
+    _expr_add_scaled(expr, x4_expr, 4.0 * reducer.a)
+    _expr_add_scaled(expr, x2_expr, -4.0 * float(reducer.n))
+    _expr_add_scaled(expr, dxx_expr, -2.0)
+    constraints.append(_expr_real(expr, variables) == 0.0)
+    constraints.append(_expr_imag(expr, variables) == 0.0)
+
+    quartic_targets = _quartic_bosonic_targets(reducer, dxx_expr=dxx_expr)
+    for word, target_expr in quartic_targets.items():
+        expr = {}
+        _expr_add_scaled(expr, reducer.moment_expr(word), 1.0)
+        _expr_add_scaled(expr, target_expr, -1.0)
+        constraints.append(_expr_real(expr, variables) == 0.0)
+        constraints.append(_expr_imag(expr, variables) == 0.0)
+
     bosonic_basis = figure8_bosonic_basis()
     fermion_minus_basis = figure8_fermion_minus_basis()
     fermion_plus_basis = figure8_fermion_plus_basis()
@@ -439,6 +547,12 @@ def solve_figure8_bound(
         [[reducer.ordinary_entry_expr(left, right) for right in fermion_plus_basis] for left in fermion_plus_basis],
     ]
     main_psd_blocks = [_build_real_psd_expression(cp, block, variables) for block in ordinary_blocks]
+
+    scalar_exprs = [
+        [{0: float(reducer.n)}, reducer.moment_expr((X,))],
+        [reducer.moment_expr((X,)), dxx_expr],
+    ]
+    main_psd_blocks.append(_build_real_psd_expression(cp, scalar_exprs, variables))
 
     ground_psd_blocks: list[Any] = []
     if include_ground:
@@ -644,7 +758,7 @@ def run_figure8_scan(
         "# Figure 8 quadratic matrix warmup",
         "",
         "- Model: quadratic supersymmetric matrix QM with raw non-cyclic traced words.",
-        "- Closure: Heisenberg + gauge + quadratic SUSY-vacuum constraints + blockwise PSD.",
+        "- Closure: Heisenberg + gauge + quadratic SUSY-vacuum constraints + minimal double-trace split sector.",
         "- Basis blocks: bosonic `7x7`, fermionic `3x3`, `3x3`.",
         f"- x2 feasible points: `{int(np.isfinite(x2_lower).sum())}/{len(n_values)}`",
         f"- x4 feasible points: `{int(np.isfinite(x4_lower).sum())}/{len(n_values)}`",

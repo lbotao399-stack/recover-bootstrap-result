@@ -32,11 +32,16 @@ def test_figure8_vacuum_constraints_reproduce_x2_bound_at_n1() -> None:
     assert result.objective_value == pytest.approx(0.5, rel=1e-5, abs=1e-6)
 
 
-def test_figure8_x4_bound_is_conservative_at_n1() -> None:
+def test_figure8_x4_bound_matches_exact_at_n1() -> None:
     result = solve_figure8_bound(n=1, observable=("X", "X", "X", "X"))
     assert result.feasible
-    assert result.objective_value == pytest.approx(0.25, rel=1e-5, abs=1e-6)
-    assert result.objective_value < figure8_x4_exact(1)
+    assert result.objective_value == pytest.approx(0.75, rel=1e-5, abs=1e-6)
+
+
+def test_figure8_x4_bound_matches_exact_at_n3() -> None:
+    result = solve_figure8_bound(n=3, observable=("X", "X", "X", "X"))
+    assert result.feasible
+    assert result.objective_value == pytest.approx(figure8_x4_exact(3), rel=1e-5, abs=1e-6)
 
 
 def test_figure8_ground_entry_closes_quadratically() -> None:

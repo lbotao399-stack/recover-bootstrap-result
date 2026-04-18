@@ -1,0 +1,16 @@
+{
+  "n_min": 1,
+  "n_max": 10,
+  "a": 1.0,
+  "closure_length": 4,
+  "solver": "AUTO",
+  "solver_eps": 1e-08,
+  "solver_max_iters": 50000,
+  "margin_tolerance": 1e-07,
+  "psd_tolerance": 1e-07,
+  "include_ground": true,
+  "bosonic_basis_size": 7,
+  "fermion_minus_basis_size": 3,
+  "fermion_plus_basis_size": 3,
+  "ground_basis_size": 5
+}

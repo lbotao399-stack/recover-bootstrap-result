@@ -1,0 +1,11 @@
+N,x2_lower,x2_exact,x2_status,x4_lower,x4_exact,x4_status
+1,0.500000000007967,0.5,clarabel:optimal_inaccurate:feas,0.25000000145767354,0.75,clarabel:optimal_inaccurate:feas
+2,2.0000000003499814,2.0,clarabel:optimal_inaccurate:feas,2.0000000049979425,4.5,clarabel:optimal_inaccurate:feas
+3,4.500000000058092,4.5,clarabel:optimal:feas,6.750000013693692,14.25,clarabel:optimal_inaccurate:feas
+4,7.999999999999982,8.0,clarabel:optimal_inaccurate:feas,16.00000005784149,33.0,clarabel:optimal:feas
+5,12.499999999999927,12.5,clarabel:optimal:feas,31.250000089000082,63.75,clarabel:optimal:feas
+6,17.999999999995676,18.0,clarabel:optimal:feas,54.00000034789753,109.5,clarabel:optimal:feas
+7,24.499999999997716,24.5,clarabel:optimal:feas,85.75000023967952,173.25,clarabel:optimal:feas
+8,32.000000000000654,32.0,clarabel:optimal:feas,128.00000016000263,258.0,clarabel:optimal:feas
+9,40.50000000000065,40.5,clarabel:optimal:feas,182.25000016416848,366.75,clarabel:optimal:feas
+10,50.000000000000014,50.0,clarabel:optimal:feas,250.0000002379051,502.5,clarabel:optimal:feas

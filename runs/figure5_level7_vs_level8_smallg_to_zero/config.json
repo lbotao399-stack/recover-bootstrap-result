@@ -1,0 +1,43 @@
+{
+  "source": "level-7 exact-to-zero run plus level-8 focused small-g recomputation",
+  "g_values": [
+    0.25,
+    0.2,
+    0.15,
+    0.12,
+    0.1,
+    0.08,
+    0.06,
+    0.05,
+    0.04,
+    0.03,
+    0.025,
+    0.022,
+    0.0
+  ],
+  "levels": [
+    7,
+    8
+  ],
+  "small_g_route": "original (x,p) reducer with instanton-rescaled eta/rho search",
+  "level8_probe_config": {
+    "small_g_switch": 0.4,
+    "use_smallg_eta_scan": true,
+    "use_smallg_centered_basis": false,
+    "use_smallg_parity_variables": false,
+    "use_smallg_nu_objective": true,
+    "bisection_steps": 6,
+    "upper_probe_points": 3,
+    "margin_tolerance": 0.001,
+    "psd_tolerance": 0.0005,
+    "eq_tolerance": 5e-05,
+    "x2_energy_scan_points": 3,
+    "x2_edge_slack": 0.005,
+    "special_case": "g=0.25 x2 used a widened 5-point edge scan; best point remained optimal_inaccurate"
+  },
+  "exact_g0_point": {
+    "energy": 0.0,
+    "x2": 0.5
+  },
+  "note": "Below roughly g~0.021 the instanton scale underflows in double precision."
+}

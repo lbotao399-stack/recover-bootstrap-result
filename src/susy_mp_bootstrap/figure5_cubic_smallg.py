@@ -742,7 +742,7 @@ def _find_energy_lower_bound(
     energy_floor: float | None = None,
 ) -> Figure5EnergyPoint:
     rr_upper = min(config.e_max, float(figure4_rr_full_energy(g)))
-    use_eta_mode = config.use_smallg_eta_scan and g < config.small_g_switch and g > 0.0
+    use_eta_mode = config.use_smallg_eta_scan and g < config.small_g_switch and g > 0.0 and figure5_instanton_energy_scale(g) > 0.0
     probes = np.linspace(rr_upper, config.e_max, config.upper_probe_points)
     high_parameter = None
     high_result: Figure5SolveResult | None = None
@@ -999,6 +999,10 @@ def plot_figure5(
     x2_bounds: dict[int, np.ndarray],
     *,
     out_path: str | Path,
+    xlim: tuple[float, float] = (0.0, 1.0),
+    energy_ylim: tuple[float, float] = (0.0, 0.3),
+    x2_ylim: tuple[float, float] = (0.0, 1.2),
+    energy_logscale: bool = False,
 ) -> None:
     plt = __import__("matplotlib")
     plt.use("Agg")
@@ -1015,8 +1019,10 @@ def plot_figure5(
         color = colors.get(level, None)
         mask = np.isfinite(energy_bounds[level])
         axes[0].plot(g_values[mask], energy_bounds[level][mask], color=color, linewidth=2.0, label=f"level {level}")
-    axes[0].set_xlim(0.0, 1.0)
-    axes[0].set_ylim(0.0, 0.3)
+    axes[0].set_xlim(*xlim)
+    axes[0].set_ylim(*energy_ylim)
+    if energy_logscale:
+        axes[0].set_yscale("log")
     axes[0].set_xlabel(r"$g$")
     axes[0].set_ylabel(r"$E$")
     axes[0].set_title("Figure 5 energy lower bounds")
@@ -1027,8 +1033,8 @@ def plot_figure5(
         color = colors.get(level, None)
         mask = np.isfinite(x2_bounds[level])
         axes[1].plot(g_values[mask], x2_bounds[level][mask], color=color, linewidth=2.0, label=f"level {level}")
-    axes[1].set_xlim(0.0, 1.0)
-    axes[1].set_ylim(0.0, 1.2)
+    axes[1].set_xlim(*xlim)
+    axes[1].set_ylim(*x2_ylim)
     axes[1].set_xlabel(r"$g$")
     axes[1].set_ylabel(r"$\langle x^2\rangle$")
     axes[1].set_title("Figure 5 x^2 lower bounds")

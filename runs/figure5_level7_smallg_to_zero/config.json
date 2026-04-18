@@ -1,0 +1,27 @@
+{
+  "source": "manual level-7 small-g continuation probes",
+  "level": 7,
+  "g_values": [
+    0.0,
+    0.022,
+    0.025,
+    0.03,
+    0.04,
+    0.05,
+    0.06,
+    0.08,
+    0.1,
+    0.12,
+    0.15,
+    0.2,
+    0.25
+  ],
+  "small_g_method": "eta/rho search with original (x,p) reducer; centered/parity preprocessing disabled",
+  "g_zero_point": {
+    "energy": 0.0,
+    "x2": 0.5,
+    "note": "exact SUSY harmonic oscillator limit"
+  },
+  "lowest_nonzero_g": 0.022,
+  "underflow_note": "below about g~0.021, the instanton scale underflows in double precision"
+}

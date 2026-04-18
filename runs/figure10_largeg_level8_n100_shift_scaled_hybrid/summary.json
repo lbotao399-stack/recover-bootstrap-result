@@ -1,0 +1,14 @@
+{
+  "block_dimensions": {
+    "-2": 4,
+    "-1": 8,
+    "0": 20,
+    "1": 8,
+    "2": 4
+  },
+  "universe_size": 389,
+  "raw_equality_constraints": 278,
+  "fit_slope": 0.6687016148526941,
+  "fit_intercept": -1.5573840103491103,
+  "fit_kappa": 0.21068650463848979
+}

@@ -134,6 +134,7 @@ class Figure10Config:
     eom_seed_level: Fraction = Fraction(7, 1)
     reality_seed_level: Fraction = Fraction(5, 1)
     include_ground_block: bool = False
+    shift_scale_min_g: float = 20.0
     g_values: tuple[float, ...] = (
         1.0,
         5.0,
@@ -143,10 +144,14 @@ class Figure10Config:
         30.0,
         40.0,
         50.0,
+        80.0,
         100.0,
         150.0,
         200.0,
         300.0,
+        400.0,
+        500.0,
+        600.0,
     )
     fit_min_g: float = 20.0
     solver: str = "AUTO"
@@ -165,6 +170,7 @@ class Figure10Config:
             "eom_seed_level": float(self.eom_seed_level),
             "reality_seed_level": float(self.reality_seed_level),
             "include_ground_block": self.include_ground_block,
+            "shift_scale_min_g": self.shift_scale_min_g,
             "g_values": list(self.g_values),
             "fit_min_g": self.fit_min_g,
             "solver": self.solver,
@@ -198,6 +204,8 @@ class _Figure10Problem:
     ground_blocks: list[list[list[PolyExpr]]]
     equality_exprs: list[PolyExpr]
     objective_expr: PolyExpr
+    energy_shift: float
+    energy_scale: float
 
 
 class Figure10Reducer:
@@ -378,6 +386,40 @@ class Figure10Reducer:
                     expr[mapped_word] = updated
         return expr
 
+    def apply_shift_scaled_hamiltonian(self, word: RawWord, *, lambda_value: float) -> dict[RawWord, complex]:
+        expr: dict[RawWord, complex] = {}
+        for index, letter in enumerate(word):
+            prefix = word[:index]
+            suffix = word[index + 1 :]
+            if letter == X:
+                contributions = {prefix + (P,) + suffix: -1.0j}
+            elif letter == P:
+                contributions = {
+                    prefix + (X,) + suffix: -0.5j * lambda_value,
+                    prefix + (X, X, X) + suffix: 2.0j,
+                    prefix + (PSIDAG, PSI) + suffix: 1.0j,
+                    prefix + (PSI, PSIDAG) + suffix: -1.0j,
+                }
+            elif letter == PSI:
+                contributions = {
+                    prefix + (X, PSI) + suffix: -1.0 + 0.0j,
+                    prefix + (PSI, X) + suffix: -1.0 + 0.0j,
+                }
+            elif letter == PSIDAG:
+                contributions = {
+                    prefix + (X, PSIDAG) + suffix: 1.0 + 0.0j,
+                    prefix + (PSIDAG, X) + suffix: 1.0 + 0.0j,
+                }
+            else:
+                raise ValueError(f"unsupported letter {letter}")
+            for mapped_word, coefficient in contributions.items():
+                updated = expr.get(mapped_word, 0.0 + 0.0j) + coefficient
+                if abs(updated) < 1e-13:
+                    expr.pop(mapped_word, None)
+                else:
+                    expr[mapped_word] = updated
+        return expr
+
     def reality_constraints(self, *, seed_level: Fraction) -> list[PolyExpr]:
         constraints: list[PolyExpr] = []
         for word in self.raw_words_by_charge[0]:
@@ -424,6 +466,18 @@ class Figure10Reducer:
                 constraints.append(expr)
         return _deduplicate_polyexprs(constraints)
 
+    def eom_constraints_shift_scaled(self, *, seed_level: Fraction, lambda_value: float) -> list[PolyExpr]:
+        constraints: list[PolyExpr] = []
+        for word in self.raw_words_by_charge[0]:
+            if _raw_word_level(word) > seed_level:
+                continue
+            expr: PolyExpr = {}
+            for mapped_word, coefficient in self.apply_shift_scaled_hamiltonian(word, lambda_value=lambda_value).items():
+                _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word(mapped_word), coefficient)
+            if expr:
+                constraints.append(expr)
+        return _deduplicate_polyexprs(constraints)
+
     def objective_expr(self) -> PolyExpr:
         expr: PolyExpr = {}
         _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((P, P)), _poly_const(0.5))
@@ -436,6 +490,17 @@ class Figure10Reducer:
         _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((PSI, PSIDAG, X)), _poly_linear(-0.5))
         _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((X, PSIDAG, PSI)), _poly_linear(0.5))
         _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((X, PSI, PSIDAG)), _poly_linear(-0.5))
+        return expr
+
+    def shift_scaled_objective_expr(self, *, lambda_value: float) -> PolyExpr:
+        expr: PolyExpr = {}
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((P, P)), 0.5)
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((X, X, X, X)), 0.5)
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((X, X)), -0.25 * lambda_value)
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((PSIDAG, PSI, X)), 0.5)
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((PSI, PSIDAG, X)), -0.5)
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((X, PSIDAG, PSI)), 0.5)
+        _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word((X, PSI, PSIDAG)), -0.5)
         return expr
 
     def ordinary_block_exprs(self) -> list[list[list[PolyExpr]]]:
@@ -460,6 +525,12 @@ class Figure10Reducer:
             _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word(_raw_word_dagger(left) + mapped_word), coefficient)
         return expr
 
+    def ground_entry_expr_shift_scaled(self, left: RawWord, right: RawWord, *, lambda_value: float) -> PolyExpr:
+        expr: PolyExpr = {}
+        for mapped_word, coefficient in self.apply_shift_scaled_hamiltonian(right, lambda_value=lambda_value).items():
+            _polyexpr_add_constexpr(expr, self.moment_expr_from_raw_word(_raw_word_dagger(left) + mapped_word), coefficient)
+        return expr
+
     def ground_block_exprs(self) -> list[list[list[PolyExpr]]]:
         basis = self.ground_basis()
         block: list[list[PolyExpr]] = []
@@ -467,6 +538,16 @@ class Figure10Reducer:
             row: list[PolyExpr] = []
             for right in basis:
                 row.append(self.ground_entry_expr(left, right))
+            block.append(row)
+        return [block]
+
+    def ground_block_exprs_shift_scaled(self, *, lambda_value: float) -> list[list[list[PolyExpr]]]:
+        basis = self.ground_basis()
+        block: list[list[PolyExpr]] = []
+        for left in basis:
+            row: list[PolyExpr] = []
+            for right in basis:
+                row.append(self.ground_entry_expr_shift_scaled(left, right, lambda_value=lambda_value))
             block.append(row)
         return [block]
 
@@ -608,6 +689,68 @@ def build_figure10_problem(
         ground_blocks=ground_blocks,
         equality_exprs=equality_exprs,
         objective_expr=objective_expr,
+        energy_shift=0.0,
+        energy_scale=1.0 / (reducer.n**2),
+    )
+
+
+def build_figure10_shift_scaled_problem(
+    reducer: Figure10Reducer,
+    *,
+    g: float,
+    gauge_seed_level: Fraction,
+    eom_seed_level: Fraction,
+    reality_seed_level: Fraction,
+    include_ground_block: bool = False,
+) -> _Figure10Problem:
+    cp = _import_cvxpy()
+    variables = cp.Variable(len(reducer.canonical_universe))
+    alpha_linear = cp.Parameter(nonneg=True, name="alpha_linear")
+    alpha_quadratic = cp.Parameter(nonneg=True, name="alpha_quadratic")
+    alpha_linear.value = 0.0
+    alpha_quadratic.value = 0.0
+
+    alpha = float(g / math.sqrt(reducer.n))
+    lambda_value = alpha ** (-4.0 / 3.0)
+
+    equality_exprs = []
+    equality_exprs.extend(reducer.reality_constraints(seed_level=reality_seed_level))
+    equality_exprs.extend(reducer.gauge_constraints(seed_level=gauge_seed_level, right=False))
+    equality_exprs.extend(reducer.gauge_constraints(seed_level=gauge_seed_level, right=True))
+    equality_exprs.extend(reducer.eom_constraints_shift_scaled(seed_level=eom_seed_level, lambda_value=lambda_value))
+    equality_exprs = _deduplicate_polyexprs(equality_exprs)
+
+    ordinary_blocks = reducer.ordinary_block_exprs()
+    constraints = []
+    for expr in equality_exprs:
+        real_expr = _polyexpr_real(expr, variables, alpha_linear, alpha_quadratic)
+        imag_expr = _polyexpr_imag(expr, variables, alpha_linear, alpha_quadratic)
+        if not isinstance(real_expr, float) or abs(real_expr) > 1e-13:
+            constraints.append(real_expr == 0.0)
+        if not isinstance(imag_expr, float) or abs(imag_expr) > 1e-13:
+            constraints.append(imag_expr == 0.0)
+
+    for block in ordinary_blocks:
+        constraints.append(_build_real_psd_expression(cp, block, variables, alpha_linear, alpha_quadratic) >> 0)
+    ground_blocks = reducer.ground_block_exprs_shift_scaled(lambda_value=lambda_value) if include_ground_block else []
+    for block in ground_blocks:
+        constraints.append(_build_real_psd_expression(cp, block, variables, alpha_linear, alpha_quadratic) >> 0)
+
+    objective_expr = reducer.shift_scaled_objective_expr(lambda_value=lambda_value)
+    objective = cp.Minimize(_polyexpr_real(objective_expr, variables, alpha_linear, alpha_quadratic))
+    problem = cp.Problem(objective, constraints)
+    return _Figure10Problem(
+        cp=cp,
+        problem=problem,
+        alpha_linear=alpha_linear,
+        alpha_quadratic=alpha_quadratic,
+        variables=variables,
+        ordinary_blocks=ordinary_blocks,
+        ground_blocks=ground_blocks,
+        equality_exprs=equality_exprs,
+        objective_expr=objective_expr,
+        energy_shift=1.0 / (32.0 * g * g),
+        energy_scale=(alpha ** (2.0 / 3.0)) / (reducer.n**2),
     )
 
 
@@ -725,7 +868,9 @@ def solve_figure10_point(
             alpha=alpha,
             status=status,
             objective_value=objective_value,
-            energy_density=None if objective_value is None else objective_value / (reducer.n**2),
+            energy_density=None
+            if objective_value is None
+            else problem_data.energy_shift + problem_data.energy_scale * objective_value,
             eq_residual=eq_residual,
             psd_residual=psd_residual,
             feasible=feasible,
@@ -815,7 +960,7 @@ def run_figure10_scan(*, out_dir: str | Path, config: Figure10Config | None = No
         observable_level=config.observable_level,
         universe_source_level=config.universe_source_level,
     )
-    problem_data = build_figure10_problem(
+    raw_problem = build_figure10_problem(
         reducer,
         gauge_seed_level=config.gauge_seed_level,
         eom_seed_level=config.eom_seed_level,
@@ -825,6 +970,17 @@ def run_figure10_scan(*, out_dir: str | Path, config: Figure10Config | None = No
 
     results: list[Figure10SolveResult] = []
     for g in config.g_values:
+        if g >= config.shift_scale_min_g:
+            problem_data = build_figure10_shift_scaled_problem(
+                reducer,
+                g=g,
+                gauge_seed_level=config.gauge_seed_level,
+                eom_seed_level=config.eom_seed_level,
+                reality_seed_level=config.reality_seed_level,
+                include_ground_block=config.include_ground_block,
+            )
+        else:
+            problem_data = raw_problem
         results.append(
             solve_figure10_point(
                 problem_data,
@@ -882,9 +1038,10 @@ def run_figure10_scan(*, out_dir: str | Path, config: Figure10Config | None = No
         "",
         "- Model: cubic matrix SUSY QM lower bound at large g with N=100.",
         "- Coupling in the solver: `alpha = g / sqrt(N)`.",
+        f"- Shift-scale activated for `g >= {config.shift_scale_min_g}`.",
         "- Ordinary PSD blocks: fermion-number `20, 8, 8, 4, 4`.",
         f"- Canonical multi-trace universe size: `{len(reducer.canonical_universe)}`.",
-        f"- Equality constraints: `{len(problem_data.equality_exprs)}`.",
+        f"- Equality constraints (raw builder): `{len(raw_problem.equality_exprs)}`.",
         f"- Ground-state thermal block enabled: `{config.include_ground_block}`.",
         f"- Fit region: `g >= {config.fit_min_g}`.",
         f"- Fit slope: `{slope:.6f}`." if np.isfinite(slope) else "- Fit slope: `nan`.",

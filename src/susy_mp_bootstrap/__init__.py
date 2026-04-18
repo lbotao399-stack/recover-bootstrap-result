@@ -101,6 +101,14 @@ from .figure10_matrix_cubic_largeg import (
     run_figure10_scan,
     solve_figure10_point,
 )
+from .figure11_matrix_cubic_smallg import (
+    Figure11Config,
+    figure11_critical_gc,
+    figure11_default_g_grid,
+    figure11_kink_g0,
+    plot_figure11,
+    run_figure11_scan,
+)
 from .figure9_potential import (
     Figure9Config,
     critical_coupling,
@@ -151,6 +159,7 @@ __all__ = [
     "Figure5CubicReducer",
     "Figure10Config",
     "Figure10Reducer",
+    "Figure11Config",
     "Figure9Config",
     "FIGURE4_RR_DIMENSION_DEFAULT",
     "FIGURE4_WKB_COEFFICIENT",
@@ -165,6 +174,9 @@ __all__ = [
     "cubic_mp_superpotential",
     "critical_coupling",
     "export_sdpb_json",
+    "figure11_critical_gc",
+    "figure11_default_g_grid",
+    "figure11_kink_g0",
     "harmonic_oscillator_energy",
     "harmonic_oscillator_recursion_coefficients",
     "harmonic_oscillator_superpotential",
@@ -203,6 +215,7 @@ __all__ = [
     "plot_figure4_zoom",
     "plot_figure5",
     "plot_figure10",
+    "plot_figure11",
     "plot_figure9",
     "refine_figure3_levels",
     "quadratic_feasible",
@@ -229,6 +242,7 @@ __all__ = [
     "run_figure4_scan",
     "run_figure5_scan",
     "run_figure10_scan",
+    "run_figure11_scan",
     "run_figure9_plot",
     "run_figure1_line_scan",
     "run_figure1_scan",

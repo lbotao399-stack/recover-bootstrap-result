@@ -116,6 +116,22 @@ def toy_operator_parity_blocks(max_level: int = 6) -> dict[tuple[int, int], tupl
     return {parity: tuple(words) for parity, words in groups.items()}
 
 
+def toy_heisenberg_x2_lower_bound(energy: float) -> float:
+    if energy <= 0.0:
+        return np.inf
+    return 3.0 / (8.0 * float(energy))
+
+
+def toy_level6_cubic_value(energy: float, x2: float) -> float:
+    energy = float(energy)
+    x2 = float(x2)
+    return 216.0 * x2**3 - 864.0 * energy**2 * x2**2 - 180.0 * energy * x2 + 256.0 * energy**3 + 81.0
+
+
+def toy_level6_cubic_satisfied(energy: float, x2: float, *, tolerance: float = 1e-8) -> bool:
+    return toy_level6_cubic_value(energy, x2) <= tolerance
+
+
 def _left_equation_terms(word: ToyWord, energy: float) -> dict[ToyWord, complex]:
     m, n, s, t = word
     coefficients: dict[ToyWord, complex] = {}
@@ -154,6 +170,13 @@ def _right_equation_terms(word: ToyWord, energy: float) -> dict[ToyWord, complex
         for b in range(min(t, 2) + 1):
             coefficient = 0.5 * ((-1.0j) ** (a + b)) * comb(s, a) * comb(t, b) * fall2[a] * fall2[b]
             add((m + 2 - a, n + 2 - b, s - a, t - b), coefficient)
+    return coefficients
+
+
+def _commutator_equation_terms(word: ToyWord, energy: float) -> dict[ToyWord, complex]:
+    coefficients = dict(_left_equation_terms(word, energy))
+    for term, coefficient in _right_equation_terms(word, energy).items():
+        coefficients[term] = coefficients.get(term, 0.0 + 0.0j) - coefficient
     return coefficients
 
 
@@ -259,8 +282,18 @@ class ToyFigure4SliceResult:
     status_min: str
     status_max: str
     feasible: bool
+    accepted: bool
+    analytic_rejected: bool
     x2_min: float | None
     x2_max: float | None
+    linear_residual_min: float | None
+    linear_residual_max: float | None
+    gram_min_eig_min: float | None
+    gram_min_eig_max: float | None
+    heisenberg_margin_min: float | None
+    heisenberg_margin_max: float | None
+    level6_cubic_min: float | None
+    level6_cubic_max: float | None
 
 
 @dataclass(frozen=True)
@@ -334,6 +367,71 @@ def _solve_linear_moment(
             continue
         expr.add_scaled(_known_moment_expr(expressions, word, moment_level=moment_level), -term_coefficient / coefficient)
     return expr
+
+
+def _has_known_moment(expressions: dict[ToyWord, AffineExpr], word: ToyWord, *, moment_level: int) -> bool:
+    if min(word) < 0 or toy_word_level(word) > moment_level:
+        return True
+    if _parity_signature(word) != (0, 0):
+        return True
+    return word in expressions or _swap_word(word) in expressions
+
+
+def _assign_swap_symmetric(
+    expressions: dict[ToyWord, AffineExpr],
+    word: ToyWord,
+    expr: AffineExpr,
+    *,
+    moment_level: int,
+) -> None:
+    if min(word) < 0 or toy_word_level(word) > moment_level:
+        return
+    if _parity_signature(word) != (0, 0):
+        return
+    expressions[word] = _copy_expr(expr)
+    swapped = _swap_word(word)
+    if _parity_signature(swapped) == (0, 0) and toy_word_level(swapped) <= moment_level:
+        expressions[swapped] = _copy_expr(expr)
+
+
+def _evaluate_hat_moment_vector(
+    reduction: ToyFigure4Reduction,
+    moment_keys: tuple[ToyWord, ...],
+    values: np.ndarray,
+) -> np.ndarray:
+    hat_values = []
+    for word in moment_keys:
+        moment_value = reduction.moment_expr(word).evaluate(values)
+        hat_value = ((-1.0j) ** (word[2] + word[3])) * moment_value
+        hat_values.append(float(np.real_if_close(hat_value, tol=1000).real))
+    return np.asarray(hat_values, dtype=float)
+
+
+def _max_reduction_residual(
+    reduction: ToyFigure4Reduction,
+    *,
+    right_level: int,
+    commutator_level: int,
+) -> float:
+    matrix, rhs, full_moment_keys = _build_full_linear_system(
+        energy=reduction.energy,
+        moment_level=reduction.moment_level,
+        right_level=right_level,
+        commutator_level=commutator_level,
+    )
+    samples = [np.zeros(len(reduction.free_keys), dtype=float)]
+    for index in range(len(reduction.free_keys)):
+        basis = np.zeros(len(reduction.free_keys), dtype=float)
+        basis[index] = 1.0
+        samples.append(basis)
+
+    max_residual = 0.0
+    for sample in samples:
+        hat_values = _evaluate_hat_moment_vector(reduction, full_moment_keys, sample)
+        residual = matrix @ hat_values - rhs
+        if residual.size:
+            max_residual = max(max_residual, float(np.max(np.abs(residual))))
+    return max_residual
 
 
 def _build_full_linear_system(
@@ -452,55 +550,154 @@ def build_toy_figure4_reduction(
     commutator_level: int = 11,
     tolerance: float = 1e-9,
 ) -> ToyFigure4Reduction:
-    matrix, rhs, moment_keys = _build_full_linear_system(
-        energy=energy,
+    free_keys = toy_free_moment_keys(moment_level)
+    expressions: dict[ToyWord, AffineExpr] = {(0, 0, 0, 0): AffineExpr(constant=1.0 + 0.0j)}
+    for free_index, word in enumerate(free_keys):
+        expressions[word] = _free_expr(free_index)
+
+    all_moment_keys = toy_moment_keys(moment_level)
+
+    for shell in range(moment_level + 1):
+        shell_keys = [word for word in all_moment_keys if toy_word_level(word) == shell]
+        if not shell_keys:
+            continue
+
+        free_word = (shell, 0, 0, 0) if (shell, 0, 0, 0) in shell_keys and shell > 0 else None
+        dependent_words = [word for word in shell_keys if word not in expressions]
+        if not dependent_words:
+            continue
+
+        equations_by_target: dict[ToyWord, dict[ToyWord, complex]] = {}
+
+        for q in range(1, shell // 2 + 1):
+            residual_degree = shell - 2 * q
+
+            for s in range(1, q + 1):
+                t = q - s
+                for m in range(residual_degree + 1):
+                    n = residual_degree - m
+                    target = _canonical_moment_key((m, n, s, t))
+                    if target is None or toy_word_level(target) != shell:
+                        continue
+                    if target in expressions or target in equations_by_target:
+                        continue
+                    equations_by_target[target] = _commutator_equation_terms((m + 1, n, s - 1, t), energy)
+
+            for m in range(residual_degree + 1):
+                n = residual_degree - m
+                target = _canonical_moment_key((m, n, 0, q))
+                if target is None or toy_word_level(target) != shell:
+                    continue
+                if target in expressions or target in equations_by_target:
+                    continue
+                equations_by_target[target] = _commutator_equation_terms((m, n + 1, 0, q - 1), energy)
+
+        for m in range(shell + 1):
+            n = shell - m
+            target = _canonical_moment_key((m, n, 0, 0))
+            if target is None or n == 0 or toy_word_level(target) != shell:
+                continue
+            if target in expressions or target in equations_by_target:
+                continue
+            if m == 0:
+                expressions[target] = _known_moment_expr(expressions, (n, 0, 0, 0), moment_level=moment_level)
+                continue
+            equations_by_target[target] = _right_equation_terms((m - 2, n - 2, 0, 0), energy)
+
+        if set(equations_by_target) != set(dependent_words):
+            missing_targets = sorted(set(dependent_words) - set(equations_by_target), key=lambda word: (toy_word_level(word), word))
+            extra_targets = sorted(set(equations_by_target) - set(dependent_words), key=lambda word: (toy_word_level(word), word))
+            raise RuntimeError(
+                "toy Figure 4 shell recursion target mismatch: "
+                f"missing={missing_targets[:6]}, extra={extra_targets[:6]}"
+            )
+
+        rows: list[list[complex]] = []
+        rhs_affine: list[AffineExpr] = []
+        for target in dependent_words:
+            terms = equations_by_target[target]
+            row = [0.0 + 0.0j for _ in dependent_words]
+            known = AffineExpr()
+            for word, coefficient in terms.items():
+                if abs(coefficient) < 1e-12:
+                    continue
+                if min(word) < 0 or toy_word_level(word) > moment_level:
+                    continue
+                if _parity_signature(word) != (0, 0):
+                    continue
+                level = toy_word_level(word)
+                if level < shell:
+                    known.add_scaled(_known_moment_expr(expressions, word, moment_level=moment_level), coefficient)
+                    continue
+                if level > shell:
+                    raise RuntimeError(f"toy Figure 4 shell recursion raised level at shell {shell}: {word}")
+                key = _canonical_moment_key(word)
+                if key is None:
+                    continue
+                if free_word is not None and key == free_word:
+                    known.add_scaled(_known_moment_expr(expressions, key, moment_level=moment_level), coefficient)
+                    continue
+                try:
+                    row[dependent_words.index(key)] += coefficient
+                except ValueError as error:
+                    raise RuntimeError(f"unexpected shell variable {key} while solving shell {shell}") from error
+            rows.append(row)
+            rhs_affine.append(known.scale(-1.0))
+
+        matrix = np.asarray(rows, dtype=np.complex128)
+        rank = int(np.linalg.matrix_rank(matrix))
+        if rank < len(dependent_words):
+            raise RuntimeError(
+                f"toy Figure 4 shell recursion produced rank-deficient shell matrix at shell {shell}: "
+                f"rank {rank} < {len(dependent_words)}"
+            )
+
+        const_rhs = np.asarray([expr.constant for expr in rhs_affine], dtype=np.complex128)
+        const_solution, _, _, _ = np.linalg.lstsq(matrix, const_rhs, rcond=None)
+        const_residual = matrix @ const_solution - const_rhs
+        max_shell_residual = float(np.max(np.abs(const_residual))) if const_residual.size else 0.0
+
+        solved_exprs = [AffineExpr(constant=complex(const_solution[index])) for index in range(len(dependent_words))]
+        for free_index in range(len(free_keys)):
+            coeff_rhs = np.asarray([expr.coefficients.get(free_index, 0.0 + 0.0j) for expr in rhs_affine], dtype=np.complex128)
+            coeff_solution, _, _, _ = np.linalg.lstsq(matrix, coeff_rhs, rcond=None)
+            coeff_residual = matrix @ coeff_solution - coeff_rhs
+            if coeff_residual.size:
+                max_shell_residual = max(max_shell_residual, float(np.max(np.abs(coeff_residual))))
+            for dep_index, coefficient in enumerate(coeff_solution):
+                if abs(coefficient) >= 1e-13:
+                    solved_exprs[dep_index].coefficients[free_index] = complex(coefficient)
+
+        if max_shell_residual > tolerance:
+            raise RuntimeError(
+                f"toy Figure 4 shell recursion residual too large at shell {shell}: {max_shell_residual:.3e}"
+            )
+
+        for word, expr in zip(dependent_words, solved_exprs, strict=True):
+            expressions[word] = expr
+
+    moment_keys = toy_moment_keys(moment_level)
+    missing = [word for word in moment_keys if not _has_known_moment(expressions, word, moment_level=moment_level)]
+    if missing:
+        missing_preview = ", ".join(str(word) for word in missing[:8])
+        raise RuntimeError(f"toy Figure 4 shell recursion left unsolved moments: {missing_preview}")
+
+    reduction = ToyFigure4Reduction(
+        energy=float(energy),
         moment_level=moment_level,
+        positivity_level=positivity_level,
+        free_keys=free_keys,
+        moment_keys=moment_keys,
+        expressions=expressions,
+        max_residual=0.0,
+    )
+    max_residual = _max_reduction_residual(
+        reduction,
         right_level=right_level,
         commutator_level=commutator_level,
     )
-    rank = int(np.linalg.matrix_rank(matrix))
-    try:
-        free_indices = _choose_preferred_free_indices(matrix, moment_keys)
-    except RuntimeError:
-        free_indices = _choose_automatic_free_indices(matrix)
-    dependent_indices = [index for index in range(len(moment_keys)) if index not in free_indices]
-    free_keys = tuple(moment_keys[index] for index in free_indices)
-
-    dependent_matrix = matrix[:, dependent_indices]
-    free_matrix = matrix[:, free_indices]
-    dependent_rank = int(np.linalg.matrix_rank(dependent_matrix))
-    if dependent_rank < len(dependent_indices):
-        raise RuntimeError("toy Figure 4 linear reduction is rank-deficient even after automatic pivot selection")
-
-    constant_solution, _, _, _ = np.linalg.lstsq(dependent_matrix, rhs, rcond=None)
-    with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-        constant_residual = dependent_matrix @ constant_solution - rhs
-    max_residual = float(np.max(np.abs(constant_residual))) if constant_residual.size else 0.0
-
-    hat_expressions: dict[ToyWord, AffineExpr] = {}
-    for free_position, free_index in enumerate(free_indices):
-        hat_expressions[moment_keys[free_index]] = _free_expr(free_position)
-    for position, dependent_index in enumerate(dependent_indices):
-        hat_expressions[moment_keys[dependent_index]] = AffineExpr(constant=complex(constant_solution[position]))
-
-    for free_position in range(len(free_indices)):
-        response = -free_matrix[:, free_position]
-        solution, _, _, _ = np.linalg.lstsq(dependent_matrix, response, rcond=None)
-        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
-            residual = dependent_matrix @ solution - response
-        max_residual = max(max_residual, float(np.max(np.abs(residual))) if residual.size else 0.0)
-        for position, dependent_index in enumerate(dependent_indices):
-            coefficient = complex(solution[position])
-            if abs(coefficient) >= 1e-13:
-                hat_expressions[moment_keys[dependent_index]].coefficients[free_position] = coefficient
-
     if max_residual > tolerance:
-        raise RuntimeError(f"toy Figure 4 linear reduction residual too large: {max_residual:.3e}")
-
-    expressions: dict[ToyWord, AffineExpr] = {}
-    for word, hat_expr in hat_expressions.items():
-        expressions[word] = hat_expr.scale(((-1.0j) ** (word[2] + word[3])))
-
+        raise RuntimeError(f"toy Figure 4 shell reduction residual too large: {max_residual:.3e}")
     return ToyFigure4Reduction(
         energy=float(energy),
         moment_level=moment_level,
@@ -550,6 +747,38 @@ def build_toy_figure4_gram_blocks(reduction: ToyFigure4Reduction) -> dict[tuple[
                 matrix[j][i] = symmetrized.conjugate()
         blocks[parity] = matrix
     return blocks
+
+
+def _evaluate_block_matrix(block: list[list[AffineExpr]], values: np.ndarray) -> np.ndarray:
+    matrix = np.asarray([[expr.evaluate(values) for expr in row] for row in block], dtype=np.complex128)
+    return 0.5 * (matrix + matrix.conjugate().T)
+
+
+def _gram_min_eigenvalue(blocks: dict[tuple[int, int], list[list[AffineExpr]]], values: np.ndarray) -> float:
+    min_eigenvalue = np.inf
+    for block in blocks.values():
+        matrix = _evaluate_block_matrix(block, values)
+        eigenvalues = np.linalg.eigvalsh(matrix)
+        min_eigenvalue = min(min_eigenvalue, float(np.min(np.real(eigenvalues))))
+    return float(min_eigenvalue)
+
+
+def _linear_residual_inf(
+    reduction: ToyFigure4Reduction,
+    values: np.ndarray,
+    *,
+    right_level: int,
+    commutator_level: int,
+) -> float:
+    matrix, rhs, full_moment_keys = _build_full_linear_system(
+        energy=reduction.energy,
+        moment_level=reduction.moment_level,
+        right_level=right_level,
+        commutator_level=commutator_level,
+    )
+    hat_values = _evaluate_hat_moment_vector(reduction, full_moment_keys, values)
+    residual = matrix @ hat_values - rhs
+    return 0.0 if residual.size == 0 else float(np.max(np.abs(residual)))
 
 
 def _affine_real(expr: AffineExpr, variables) -> Any:
@@ -619,6 +848,28 @@ def _solve_toy_figure4_objective(
     return status, values
 
 
+def _certify_toy_figure4_point(
+    reduction: ToyFigure4Reduction,
+    blocks: dict[tuple[int, int], list[list[AffineExpr]]],
+    values: np.ndarray | None,
+    *,
+    right_level: int,
+    commutator_level: int,
+) -> tuple[float | None, float | None, float | None, float | None]:
+    if values is None:
+        return None, None, None, None
+    x2 = float(np.real(reduction.moment_expr((2, 0, 0, 0)).evaluate(values)))
+    linear_residual = _linear_residual_inf(
+        reduction,
+        values,
+        right_level=right_level,
+        commutator_level=commutator_level,
+    )
+    gram_min_eig = _gram_min_eigenvalue(blocks, values)
+    heisenberg_margin = x2 * (2.0 * reduction.energy / 3.0) - 0.25
+    return linear_residual, gram_min_eig, heisenberg_margin, toy_level6_cubic_value(reduction.energy, x2)
+
+
 def solve_toy_figure4_slice(
     energy: float,
     *,
@@ -650,15 +901,73 @@ def solve_toy_figure4_slice(
         solver_eps=resolved.solver_eps,
         solver_max_iters=resolved.solver_max_iters,
     )
-    feasible = values_min is not None and values_max is not None
     x2_expr = reduction.moment_expr((2, 0, 0, 0))
+    feasible = values_min is not None and values_max is not None
+    x2_min = None if values_min is None else float(np.real(x2_expr.evaluate(values_min)))
+    x2_max = None if values_max is None else float(np.real(x2_expr.evaluate(values_max)))
+
+    linear_residual_min, gram_min_eig_min, heisenberg_margin_min, level6_cubic_min = _certify_toy_figure4_point(
+        reduction,
+        blocks,
+        values_min,
+        right_level=resolved.right_level,
+        commutator_level=resolved.commutator_level,
+    )
+    linear_residual_max, gram_min_eig_max, heisenberg_margin_max, level6_cubic_max = _certify_toy_figure4_point(
+        reduction,
+        blocks,
+        values_max,
+        right_level=resolved.right_level,
+        commutator_level=resolved.commutator_level,
+    )
+
+    analytic_tolerance = 1e-8
+    residual_tolerance = 1e-9
+    eigen_tolerance = 1e-8
+    analytic_rejected = any(
+        condition
+        for condition in (
+            heisenberg_margin_min is not None and heisenberg_margin_min < -analytic_tolerance,
+            heisenberg_margin_max is not None and heisenberg_margin_max < -analytic_tolerance,
+            level6_cubic_min is not None and level6_cubic_min > analytic_tolerance,
+            level6_cubic_max is not None and level6_cubic_max > analytic_tolerance,
+        )
+    )
+    accepted = all(
+        condition
+        for condition in (
+            feasible,
+            status_min == "optimal",
+            status_max == "optimal",
+            linear_residual_min is not None and linear_residual_min <= residual_tolerance,
+            linear_residual_max is not None and linear_residual_max <= residual_tolerance,
+            gram_min_eig_min is not None and gram_min_eig_min >= -eigen_tolerance,
+            gram_min_eig_max is not None and gram_min_eig_max >= -eigen_tolerance,
+            heisenberg_margin_min is not None and heisenberg_margin_min >= -analytic_tolerance,
+            heisenberg_margin_max is not None and heisenberg_margin_max >= -analytic_tolerance,
+            level6_cubic_min is not None and level6_cubic_min <= analytic_tolerance,
+            level6_cubic_max is not None and level6_cubic_max <= analytic_tolerance,
+            x2_min is not None and x2_max is not None and x2_min <= x2_max + analytic_tolerance,
+        )
+    )
+
     return ToyFigure4SliceResult(
         energy=float(energy),
         status_min=status_min,
         status_max=status_max,
         feasible=feasible,
-        x2_min=None if values_min is None else float(np.real(x2_expr.evaluate(values_min))),
-        x2_max=None if values_max is None else float(np.real(x2_expr.evaluate(values_max))),
+        accepted=accepted,
+        analytic_rejected=analytic_rejected,
+        x2_min=x2_min,
+        x2_max=x2_max,
+        linear_residual_min=linear_residual_min,
+        linear_residual_max=linear_residual_max,
+        gram_min_eig_min=gram_min_eig_min,
+        gram_min_eig_max=gram_min_eig_max,
+        heisenberg_margin_min=heisenberg_margin_min,
+        heisenberg_margin_max=heisenberg_margin_max,
+        level6_cubic_min=level6_cubic_min,
+        level6_cubic_max=level6_cubic_max,
     )
 
 
@@ -671,7 +980,27 @@ def write_toy_figure4_bounds_csv(path: str | Path, results: list[ToyFigure4Slice
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["energy", "status_min", "status_max", "feasible", "x2_min", "x2_max"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "energy",
+                "status_min",
+                "status_max",
+                "feasible",
+                "accepted",
+                "analytic_rejected",
+                "x2_min",
+                "x2_max",
+                "linear_residual_min",
+                "linear_residual_max",
+                "gram_min_eig_min",
+                "gram_min_eig_max",
+                "heisenberg_margin_min",
+                "heisenberg_margin_max",
+                "level6_cubic_min",
+                "level6_cubic_max",
+            ],
+        )
         writer.writeheader()
         for result in results:
             writer.writerow(
@@ -680,8 +1009,18 @@ def write_toy_figure4_bounds_csv(path: str | Path, results: list[ToyFigure4Slice
                     "status_min": result.status_min,
                     "status_max": result.status_max,
                     "feasible": int(result.feasible),
+                    "accepted": int(result.accepted),
+                    "analytic_rejected": int(result.analytic_rejected),
                     "x2_min": np.nan if result.x2_min is None else result.x2_min,
                     "x2_max": np.nan if result.x2_max is None else result.x2_max,
+                    "linear_residual_min": np.nan if result.linear_residual_min is None else result.linear_residual_min,
+                    "linear_residual_max": np.nan if result.linear_residual_max is None else result.linear_residual_max,
+                    "gram_min_eig_min": np.nan if result.gram_min_eig_min is None else result.gram_min_eig_min,
+                    "gram_min_eig_max": np.nan if result.gram_min_eig_max is None else result.gram_min_eig_max,
+                    "heisenberg_margin_min": np.nan if result.heisenberg_margin_min is None else result.heisenberg_margin_min,
+                    "heisenberg_margin_max": np.nan if result.heisenberg_margin_max is None else result.heisenberg_margin_max,
+                    "level6_cubic_min": np.nan if result.level6_cubic_min is None else result.level6_cubic_min,
+                    "level6_cubic_max": np.nan if result.level6_cubic_max is None else result.level6_cubic_max,
                 }
             )
 
@@ -691,20 +1030,40 @@ def plot_toy_figure4(results: list[ToyFigure4SliceResult], *, out_path: str | Pa
     output_path = Path(out_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    energies = np.array([result.energy for result in results], dtype=float)
-    lower = np.array([np.nan if result.x2_min is None else result.x2_min for result in results], dtype=float)
-    upper = np.array([np.nan if result.x2_max is None else result.x2_max for result in results], dtype=float)
-    mask = np.isfinite(lower) & np.isfinite(upper)
-
     fig, ax = plt.subplots(figsize=(7.2, 5.4))
-    if np.any(mask):
-        ax.fill_between(energies[mask], lower[mask], upper[mask], color="#5b84c4", alpha=0.35, linewidth=0.0)
-        ax.plot(energies[mask], lower[mask], color="#1b4f9c", linewidth=1.2)
-        ax.plot(energies[mask], upper[mask], color="#1b4f9c", linewidth=1.2)
+    for result in results:
+        if result.x2_min is None or result.x2_max is None:
+            continue
+        if result.accepted:
+            color = "#1b4f9c"
+            alpha = 0.9
+            linewidth = 2.0
+        elif result.analytic_rejected:
+            color = "#c94f3d"
+            alpha = 0.9
+            linewidth = 1.8
+        else:
+            color = "#7f7f7f"
+            alpha = 0.8
+            linewidth = 1.5
+        ax.vlines(result.energy, result.x2_min, result.x2_max, color=color, alpha=alpha, linewidth=linewidth)
+        ax.scatter([result.energy, result.energy], [result.x2_min, result.x2_max], color=color, alpha=alpha, s=10)
+
+    positive_energies = np.array([result.energy for result in results if result.energy > 0.0], dtype=float)
+    if positive_energies.size:
+        ax.plot(
+            positive_energies,
+            [toy_heisenberg_x2_lower_bound(energy) for energy in positive_energies],
+            color="#111111",
+            linestyle="--",
+            linewidth=1.1,
+            label=r"$\langle x^2\rangle \ge 3/(8E)$",
+        )
     ax.set_xlabel(r"$E$")
     ax.set_ylabel(r"$\langle x^2 \rangle$")
-    ax.set_title("Toy Figure 4 Archipelago")
+    ax.set_title("Toy Figure 4 Certified Vertical Slices")
     ax.grid(alpha=0.25)
+    ax.legend(loc="upper right", frameon=False)
     fig.tight_layout()
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
@@ -721,22 +1080,30 @@ def run_toy_figure4_scan(*, out_dir: str | Path, config: ToyFigure4Config | None
     plot_toy_figure4(results, out_path=output_dir / "toy_figure4_x2y2.png")
 
     feasible = [result for result in results if result.feasible]
+    accepted = [result for result in results if result.accepted]
+    analytically_rejected = [result for result in results if result.analytic_rejected]
     summary_lines = [
         "# Toy Figure 4 Summary",
         "",
         f"- energy window: [{resolved.energy_min}, {resolved.energy_max}] with {resolved.num_energy} slices",
         f"- moment level: {resolved.moment_level}",
         f"- positivity level: {resolved.positivity_level}",
-        f"- feasible slices: {len(feasible)} / {len(results)}",
+        f"- raw solver-returned slices: {len(feasible)} / {len(results)}",
+        f"- certified accepted slices: {len(accepted)} / {len(results)}",
+        f"- analytically rejected slices: {len(analytically_rejected)} / {len(results)}",
     ]
     if feasible:
         summary_lines.extend(
             [
-                f"- first feasible energy: {feasible[0].energy:.6f}",
-                f"- last feasible energy: {feasible[-1].energy:.6f}",
-                f"- smallest lower bound on <x^2>: {min(result.x2_min for result in feasible if result.x2_min is not None):.6f}",
-                f"- largest upper bound on <x^2>: {max(result.x2_max for result in feasible if result.x2_max is not None):.6f}",
+                f"- first raw slice energy: {feasible[0].energy:.6f}",
+                f"- last raw slice energy: {feasible[-1].energy:.6f}",
+                f"- smallest raw lower bound on <x^2>: {min(result.x2_min for result in feasible if result.x2_min is not None):.6f}",
+                f"- largest raw upper bound on <x^2>: {max(result.x2_max for result in feasible if result.x2_max is not None):.6f}",
             ]
+        )
+    if analytically_rejected:
+        summary_lines.append(
+            f"- first analytically rejected energy: {analytically_rejected[0].energy:.6f}"
         )
     (output_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
     return output_dir

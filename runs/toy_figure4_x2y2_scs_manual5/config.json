@@ -1,0 +1,13 @@
+{
+  "moment_level": 12,
+  "positivity_level": 6,
+  "right_level": 8,
+  "commutator_level": 11,
+  "energy_min": 0.5,
+  "energy_max": 4.5,
+  "num_energy": 5,
+  "solver": "SCS",
+  "solver_eps": 1e-06,
+  "solver_max_iters": 12000,
+  "elimination_tolerance": 1e-09
+}

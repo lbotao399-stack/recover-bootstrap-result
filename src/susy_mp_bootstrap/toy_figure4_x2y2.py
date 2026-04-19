@@ -391,6 +391,58 @@ def _build_full_linear_system(
     return matrix, rhs_vector, moment_keys
 
 
+def _choose_preferred_free_indices(matrix: np.ndarray, moment_keys: tuple[ToyWord, ...]) -> list[int]:
+    from scipy.linalg import qr
+
+    rank = int(np.linalg.matrix_rank(matrix))
+    nullity = matrix.shape[1] - rank
+    if nullity <= 0:
+        return []
+
+    key_to_index = {word: index for index, word in enumerate(moment_keys)}
+    max_degree = max((word[0] for word in moment_keys if word[1:] == (0, 0, 0)), default=0)
+    preferred_words = [word for word in toy_free_moment_keys(max_degree) if word in key_to_index]
+    free_indices = [key_to_index[word] for word in preferred_words]
+    all_columns = list(range(matrix.shape[1]))
+
+    def dependent_rank(candidate_free: list[int]) -> tuple[int, int]:
+        dependent = [column for column in all_columns if column not in candidate_free]
+        return int(np.linalg.matrix_rank(matrix[:, dependent])), len(dependent)
+
+    current_rank, dependent_count = dependent_rank(free_indices)
+    if current_rank > dependent_count:
+        raise RuntimeError("toy Figure 4 preferred free basis over-constrained the dependent block")
+
+    _, _, pivot_columns = qr(matrix, pivoting=True, mode="economic")
+    for column in pivot_columns[rank:]:
+        if int(column) in free_indices:
+            continue
+        free_indices = sorted(free_indices + [int(column)])
+        if len(free_indices) == nullity:
+            break
+
+    if len(free_indices) < nullity:
+        for column in all_columns:
+            if column in free_indices:
+                continue
+            free_indices = sorted(free_indices + [column])
+            if len(free_indices) == nullity:
+                break
+
+    final_rank, final_dependent = dependent_rank(free_indices)
+    if len(free_indices) != nullity or final_rank < final_dependent:
+        raise RuntimeError("toy Figure 4 could not build a preferred free basis containing the pure x moments")
+    return free_indices
+
+
+def _choose_automatic_free_indices(matrix: np.ndarray) -> list[int]:
+    from scipy.linalg import qr
+
+    rank = int(np.linalg.matrix_rank(matrix))
+    _, _, pivot_columns = qr(matrix, pivoting=True, mode="economic")
+    return sorted(int(index) for index in pivot_columns[rank:])
+
+
 def build_toy_figure4_reduction(
     energy: float,
     *,
@@ -400,8 +452,6 @@ def build_toy_figure4_reduction(
     commutator_level: int = 11,
     tolerance: float = 1e-9,
 ) -> ToyFigure4Reduction:
-    from scipy.linalg import qr
-
     matrix, rhs, moment_keys = _build_full_linear_system(
         energy=energy,
         moment_level=moment_level,
@@ -409,8 +459,10 @@ def build_toy_figure4_reduction(
         commutator_level=commutator_level,
     )
     rank = int(np.linalg.matrix_rank(matrix))
-    _, _, pivot_columns = qr(matrix, pivoting=True, mode="economic")
-    free_indices = sorted(int(index) for index in pivot_columns[rank:])
+    try:
+        free_indices = _choose_preferred_free_indices(matrix, moment_keys)
+    except RuntimeError:
+        free_indices = _choose_automatic_free_indices(matrix)
     dependent_indices = [index for index in range(len(moment_keys)) if index not in free_indices]
     free_keys = tuple(moment_keys[index] for index in free_indices)
 

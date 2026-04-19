@@ -62,3 +62,16 @@ def test_toy_level4_regressions_are_built_in() -> None:
     assert px2 == pytest.approx(2.0 * energy / 3.0, abs=1e-8)
     assert py2 == pytest.approx(2.0 * energy / 3.0, abs=1e-8)
     assert x2y2 == pytest.approx(2.0 * energy / 3.0, abs=1e-8)
+
+
+def test_toy_reduction_keeps_x2_as_a_free_direction_when_possible() -> None:
+    reduction = build_toy_figure4_reduction(1.5, tolerance=1e-8)
+    assert reduction.free_keys[:4] == (
+        (2, 0, 0, 0),
+        (4, 0, 0, 0),
+        (6, 0, 0, 0),
+        (8, 0, 0, 0),
+    )
+    x2 = reduction.moment_expr((2, 0, 0, 0))
+    assert x2.constant == pytest.approx(0.0, abs=1e-12)
+    assert x2.coefficients == {0: pytest.approx(1.0, abs=1e-12)}

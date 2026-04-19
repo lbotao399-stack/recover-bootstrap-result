@@ -1,0 +1,6 @@
+energy,status_min,status_max,feasible,x2_min,x2_max
+0.5,optimal_inaccurate,optimal_inaccurate,1,0.689134627442618,0.6990717859990248
+1.5,optimal_inaccurate,optimal_inaccurate,1,0.38454544505196503,4.530227308297672
+2.5,optimal_inaccurate,optimal_inaccurate,1,1.4414881549789296,1.4681746729415976
+3.5,optimal_inaccurate,optimal_inaccurate,1,1.6033404131743358,2.567284334326796
+4.5,optimal_inaccurate,optimal_inaccurate,1,1.7621113270349502,3.2135295657733804
